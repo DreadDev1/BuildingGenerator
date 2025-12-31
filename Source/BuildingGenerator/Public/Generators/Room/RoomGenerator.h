@@ -114,8 +114,16 @@ public:
 #pragma endregion
 	
 #pragma region Room Grid Management
+	
+	// Grid dimensions in cells
+	FIntPoint GridSize;
+	
+	// Grid state array (row-major order: Index = Y * GridSize.X + X)
+	UPROPERTY()
+	TArray<EGridCellType> GridState;
+	
 	UFUNCTION(BlueprintCallable, Category = "Room Generator")
-	void CreateGrid();
+	virtual void CreateGrid();
 	UFUNCTION(BlueprintCallable, Category = "Room Generator")
 	void ClearGrid();
 	UFUNCTION(BlueprintCallable, Category = "Room Generator")
@@ -270,23 +278,15 @@ public:
 	/* Get total cell count */
 	int32 GetTotalCellCount() const { return GridSize.X * GridSize.Y; }
 #pragma endregion
-	
-private:
+
 #pragma region Internal Data
 
 	// Reference to room configuration data
 	UPROPERTY()
 	URoomData* RoomData;
 	
-	// Grid dimensions in cells
-	FIntPoint GridSize;
-
 	// Cell size in cm (from CELL_SIZE constant)
 	float CellSize;
-	
-	// Grid state array (row-major order: Index = Y * GridSize.X + X)
-	UPROPERTY()
-	TArray<EGridCellType> GridState;
 	
 	// Placed floor meshes
 	UPROPERTY()
