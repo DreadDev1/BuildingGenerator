@@ -1,7 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Spawners/Rooms/RoomSpawner.h"
-#include "Generators/Room/RoomGenerator.h"
+#include "Generators/Rooms/RoomGenerator.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Data/Room/DoorData.h" 

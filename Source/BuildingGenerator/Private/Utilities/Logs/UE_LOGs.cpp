@@ -4,7 +4,7 @@
 #include "Utilities/Logs/UE_LOGs.h"
 
 #include "BuildingGenerator/BuildingGenerator.h"
-#include "Generators/Room/RoomGenerator.h"
+#include "Generators/Rooms/RoomGenerator.h"
 #include "Engine/Engine.h"
 
 UUE_LOGs::UUE_LOGs()

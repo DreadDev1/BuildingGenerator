@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Generators/Room/RoomGenerator.h"
+#include "Generators/Rooms/RoomGenerator.h"
 #include "Utilities/Debugging/DebugHelpers.h"
 #include "Data/Room/RoomData.h"
 #include "RoomSpawner.generated.h"

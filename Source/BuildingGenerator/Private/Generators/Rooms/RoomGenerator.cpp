@@ -1,6 +1,6 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-#include "Generators/Room/RoomGenerator.h"
+#include "Generators/Rooms/RoomGenerator.h"
 #include "Utilities/Generation/RoomGenerationHelpers.h" 
 #include "Data/Grid/GridData.h"
 #include "Data/Room/CeilingData.h"
