@@ -56,12 +56,12 @@ class BUILDINGGENERATOR_API UChunkyRoomGenerator : public URoomGenerator
 	GENERATED_BODY()
 
 public:
-	/** Initialize with chunky generation parameters */
-	void SetChunkyParams(int32 InMinChunks, int32 InMaxChunks, float InChunk2x2Chance, 
-	                     float InChunk4x4Chance, float InChunkRectChance, int32 InSeed);
-
 	/** Override:  Create chunky grid pattern */
 	virtual void CreateGrid() override;
+	
+	/** Initialize with chunky generation parameters */
+	void SetChunkyParams(int32 InMinChunks, int32 InMaxChunks, float InChunk2x2Chance, 
+						 float InChunk4x4Chance, float InChunkRectChance, int32 InSeed);
 
 private:
 	// Chunky generation parameters
@@ -95,7 +95,7 @@ private:
 
 	/** Get potential positions adjacent to placed chunks */
 	TArray<FIntPoint> GetAdjacentPositions() const;
-
+	
 	/** Validate minimum room size */
 	bool ValidateMinimumSize();
 };

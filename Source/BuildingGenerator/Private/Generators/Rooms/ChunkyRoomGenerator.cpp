@@ -51,7 +51,7 @@ void UChunkyRoomGenerator::CreateGrid()
 
 	// Execute chunky generation algorithm
 	ExecuteChunkyGeneration();
-
+	
 	// Validate result
 	if (! ValidateMinimumSize())
 	{
