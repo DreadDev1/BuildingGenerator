@@ -77,16 +77,15 @@ void UChunkyRoomGenerator:: ExecuteChunkyGeneration()
 	UE_LOG(LogTemp, Log, TEXT("  Target chunks to place: %d"), TargetChunks);
 
 	// Place initial chunk at center of grid
-	FIntPoint CenterPos(GridSize.X / 2 - 2, GridSize.Y / 2 - 2);
+	FIntPoint StartPos(0, 0);
 	FIntPoint InitialSize = GetRandomChunkSize();
-	FRoomChunk InitialChunk(CenterPos, InitialSize);
+	FRoomChunk InitialChunk(StartPos, InitialSize);
 
 	if (IsValidChunkPlacement(InitialChunk))
 	{
 		PlacedChunks.Add(InitialChunk);
 		MarkChunkCells(InitialChunk);
-		UE_LOG(LogTemp, Log, TEXT("    Placed initial chunk at (%d,%d) size %dx%d"),
-			CenterPos.X, CenterPos.Y, InitialSize.X, InitialSize.Y);
+		UE_LOG(LogTemp, Log, TEXT("    Placed initial chunk at (0,0) size %dx%d"), InitialSize.X, InitialSize.Y);
 	}
 
 	// Place additional chunks
