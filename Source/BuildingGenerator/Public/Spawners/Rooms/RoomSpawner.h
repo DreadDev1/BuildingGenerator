@@ -49,31 +49,31 @@ public:
 #if WITH_EDITOR
 #pragma region Room Grid Generation
 	/* Generate the room grid (visualization only at this stage) Creates empty grid and displays it with coordinates */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Generation")
 	void GenerateRoomGrid();
 	
 	/* Clear the room grid and all visualizations */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Clearing")
 	virtual void ClearRoomGrid();
 #pragma endregion
 	
 #pragma region Floor Mesh Generation
 	/** Generate floor meshes based on RoomData FloorData */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Generation")
 	void GenerateFloorMeshes();
 
 	/* Clear all spawned floor meshes */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Clearing")
 	void ClearFloorMeshes();
 #pragma endregion
 
 #pragma region Wall Mesh Generation
 	/** Generate wall meshes based on RoomData WallData */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Generation")
 	void GenerateWallMeshes();
 
 	/* Clear all spawned wall meshes */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Clearing")
 	void ClearWallMeshes();
 	
 	// Helper functions
@@ -82,46 +82,46 @@ public:
 	
 #pragma region Corner Mesh Generation
 	/** Generate corner meshes for all 4 corners */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Generation")
 	void GenerateCornerMeshes();
 
 	/* Clear all spawned corner meshes */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Clearing")
 	void ClearCornerMeshes();
 #pragma endregion
 	
 #pragma region Doorway Mesh Generation
 	/** Generate doorway meshes (frames only, actors later) */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Generation")
 	void GenerateDoorwayMeshes();
 		
 	/** Clear all spawned doorway meshes */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Clearing")
 	void ClearDoorwayMeshes();
 #pragma endregion
 	
 #pragma region Ceiling Mesh Generation
 	/* Generate ceiling meshes */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Generation")
 	void GenerateCeilingMeshes();
 
 	/* Clear ceiling meshes */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Clearing")
 	void ClearCeilingMeshes();	
 #pragma endregion
 	
 #pragma region Debug Functions
 #pragma region Grid Coordinate Text Rendering
 	/* Toggle grid outline display */
-	UFUNCTION(CallInEditor, Category = "Room Generation|Debug")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Toggles")
 	void ToggleGrid();
 	
 	/* Toggle coordinate display */
-	UFUNCTION(CallInEditor, Category = "Room Generation|Debug")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Toggles")
 	void ToggleCoordinates();
 	
 	/* Toggle cell state visualization */
-	UFUNCTION(CallInEditor, Category = "Room Generation|Debug")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Toggles")
 	void ToggleCellStates();
 	
 	/* Create a text render component at specified world location Called by DebugHelpers via delegate */
@@ -132,7 +132,7 @@ public:
 #pragma endregion
 	
 	/* Refresh visualization (useful after changing debug settings) */
-	UFUNCTION(CallInEditor, Category = "Room Generation")
+	UFUNCTION(CallInEditor, Category = "Room Generation|Visualization")
 	void RefreshVisualization();
 #pragma endregion
 	
