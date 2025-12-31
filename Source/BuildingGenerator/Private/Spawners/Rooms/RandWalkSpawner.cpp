@@ -25,19 +25,40 @@ bool ARandWalkSpawner::EnsureGeneratorReady()
 {
 	// Validate RoomData
 	if (!RoomData)
-	{
-		DebugHelpers->LogCritical(TEXT("RoomData is not assigned!"));
-		return false;
-	}
+	{ DebugHelpers->LogCritical(TEXT("RoomData is not assigned!")); return false; }
 
+	if (!RoomGenerator) RoomGenerator = NewObject<URandWalkGenerator>(this);
+	
+	 RandWalkGen = Cast<URandWalkGenerator>(RoomGenerator);
+	if (!RandWalkGen) return false;
+	
+	// Initialize generator
+	if (!RandWalkGen->Initialize(RoomData, RoomGridSize)) return false;
+	
+	// Calculate seed
+	int32 FinalSeed = bUseRandomSeed ? FMath:: Rand() : RandomSeed;
+	
+	// Set random walk parameters
+	RandWalkGen->SetRandomWalkParams( TargetFillRatio, BranchingChance, DirectionChangeChance,
+	MaxActiveWalkers, SmoothingIterations, bRemoveDisconnectedRegions, FinalSeed);
+	
+	// Set irregular wall parameters (2Y and 4Y only)
+	RandWalkGen->SetIrregularWallParams(
+		bEnableIrregularWalls,
+		Wall2CellChance,
+		Wall4CellChance,
+		MinSegmentLength,
+		MaxSegmentLength
+	);
+	
 	if (RoomGridSize.X < 4 || RoomGridSize.Y < 4)
 	{
 		DebugHelpers->LogCritical(TEXT("GridSize is too small (min 4x4)!"));
 		return false;
 	}
 
-	// KEY DIFFERENCE: Create RandWalkRoomGenerator instead of RoomGenerator
-	if (! RoomGenerator)
+	// Create RandWalkRoomGenerator instead of RoomGenerator
+	if (!RoomGenerator)
 	{
 		DebugHelpers->LogVerbose(TEXT("Creating RandWalkRoomGenerator... "));
 		RoomGenerator = NewObject<URandWalkGenerator>(this, TEXT("RandWalkRoomGenerator"));
@@ -61,7 +82,7 @@ bool ARandWalkSpawner::EnsureGeneratorReady()
 		}
 
 		// Set random walk parameters
-		URandWalkGenerator* RandWalkGen = Cast<URandWalkGenerator>(RoomGenerator);
+		 RandWalkGen = Cast<URandWalkGenerator>(RoomGenerator);
 		if (RandWalkGen)
 		{
 			// Determine seed

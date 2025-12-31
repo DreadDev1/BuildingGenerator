@@ -6,6 +6,8 @@
 #include "RoomSpawner.h"
 #include "RandWalkSpawner.generated.h"
 
+class URandWalkGenerator;
+
 /* Generates organic irregular room shapes using random walk algorithm */
 UCLASS()
 class BUILDINGGENERATOR_API ARandWalkSpawner : public ARoomSpawner
@@ -55,6 +57,32 @@ public:
 	bool bUseRandomSeed = false;
 #pragma endregion
 
+#pragma region Wall Variation Configuration
+	/** Enable irregular wall segment widths (creates bulges/recesses) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Random Walk|Wall Configuration")
+	bool bEnableIrregularWalls = true;
+
+	/** Probability of 2-cell wall segments (200cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Random Walk|Wall Configuration", 
+		meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bEnableIrregularWalls"))
+	float Wall2CellChance = 0.6f;
+
+	/** Probability of 4-cell wall segments (400cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Random Walk|Wall Configuration", 
+		meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bEnableIrregularWalls"))
+	float Wall4CellChance = 0.4f;
+
+	/** Minimum segment length before changing wall depth (prevents too much variation) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Random Walk|Wall Configuration", 
+		meta = (ClampMin = "2", ClampMax = "10", EditCondition = "bEnableIrregularWalls"))
+	int32 MinSegmentLength = 3;
+
+	/** Maximum segment length before forcing depth change (creates more variation) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Random Walk|Wall Configuration", 
+		meta = (ClampMin = "3", ClampMax = "20", EditCondition = "bEnableIrregularWalls"))
+	int32 MaxSegmentLength = 8;
+#pragma endregion
+	
 #pragma region Debug Visualization
 	/** Show the irregular room boundary in editor */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Random Walk|Debug")
@@ -77,6 +105,8 @@ protected:
 	virtual void UpdateVisualization() override;
 
 private:
+	
+	URandWalkGenerator* RandWalkGen;
 	/** Draw the irregular room boundary */
 	void DrawIrregularBoundary();
 };

@@ -213,7 +213,7 @@ FColor UDebugHelpers:: GetColorForCellType(EGridCellType CellType) const
 	case EGridCellType:: ECT_FloorMesh:
 		return OccupiedCellColor;  // Red
 
-	case EGridCellType::ECT_Wall:
+	case EGridCellType::ECT_WallMesh:
 		return FColor::Purple;  // Wall boundaries
 
 	case EGridCellType::ECT_Doorway:

@@ -42,6 +42,13 @@ public:
 	/** Initialize with random walk parameters */
 	void SetRandomWalkParams(float InFillRatio, float InBranchChance, float InDirChangeChance, 
 		int32 InMaxWalkers, int32 InSmoothingPasses, bool bInRemoveIslands, int32 InSeed);
+	
+	/** Set irregular wall parameters (2Y and 4Y segments only) */
+	void SetIrregularWallParams(bool bEnabled, float Wall2Chance, float Wall4Chance, 
+								int32 MinSegmentLen, int32 MaxSegmentLen);
+
+	/** Generate irregular wall perimeter around floor area */
+	void GenerateIrregularWalls();
 
 #pragma region Floor Generation Override
 	/** Override:  Only generate floor in cells marked by random walk */
@@ -50,7 +57,6 @@ public:
 	virtual void CreateGrid() override;
 #pragma endregion
 	
-
 
 #pragma region Random Walk Algorithm
 	/** Execute the random walk algorithm to fill grid */
@@ -109,10 +115,46 @@ private:
 	int32 SmoothingPasses;
 	bool bRemoveIslands;
 	int32 RandomSeed;
+	// Wall variation parameters
+	bool bUseIrregularWalls;
+	float Prob2CellWall;
+	float Prob4CellWall;
+	int32 MinWallSegmentLength;
+	int32 MaxWallSegmentLength;
 
 	// Random stream for deterministic generation
 	FRandomStream RandomStream;
 
 	// Direction vectors (North, East, South, West)
 	static const TArray<FIntPoint> DirectionVectors;
+	
+	/** Get random wall depth (2 or 4 cells only) */
+	int32 GetRandomWallDepth();
+
+	/** Generate irregular walls for a specific edge */
+	void GenerateIrregularEdgeWalls(EWallEdge Edge);
+
+	/** Extend wall segment outward from edge */
+	void ExtendWallSegment(FIntPoint StartCell, EWallEdge Edge, int32 Depth, int32 Length);
+
+	/** Get outward direction for an edge (perpendicular to edge) */
+	FIntPoint GetEdgeOutwardDirection(EWallEdge Edge) const;
+
+	/** Get direction along the length of an edge */
+	FIntPoint GetEdgeLengthDirection(EWallEdge Edge) const;
+
+	/** Get cell position on edge at given offset */
+	FIntPoint GetEdgeCellPosition(EWallEdge Edge, int32 Offset) const;
+
+	/** Check if cell is adjacent to floor (determines if wall should be placed) */
+	bool IsAdjacentToFloor(FIntPoint Cell, EWallEdge Edge) const;
+
+	/** Mark standard uniform walls (fallback if irregular walls disabled) */
+	void MarkStandardWalls();
+
+	/** Check if cell is at floor boundary */
+	bool IsFloorBoundaryCell(FIntPoint Cell) const;
+
+	/** Get all boundary cells of the floor area */
+	TArray<FIntPoint> GetFloorBoundaryCells() const;
 };

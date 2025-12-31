@@ -22,7 +22,7 @@ enum class EGridCellType : uint8
 {
 	ECT_Empty 		UMETA(DisplayName = "Empty"),
 	ECT_FloorMesh 	UMETA(DisplayName = "Floor Mesh"),
-	ECT_Wall 		UMETA(DisplayName = "Wall Boundary"),
+	ECT_WallMesh 		UMETA(DisplayName = "Wall Boundary"),
 	ECT_Doorway 	UMETA(DisplayName = "Doorway Slot")
 };
 

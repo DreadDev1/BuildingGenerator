@@ -510,7 +510,7 @@ void URoomGenerator::MarkForcedEmptyCells(const TArray<FIntPoint>& EmptyCells)
 	for (const FIntPoint& Cell :  EmptyCells)
 	{
 		// Mark as Wall type (reserved/boundary marker)
-		SetCellState(Cell, EGridCellType::ECT_Wall);
+		SetCellState(Cell, EGridCellType::ECT_WallMesh);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::MarkForcedEmptyCells - Marked %d cells as empty"), EmptyCells.Num());

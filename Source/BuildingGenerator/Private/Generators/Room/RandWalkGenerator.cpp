@@ -13,22 +13,56 @@ const TArray<FIntPoint> URandWalkGenerator::DirectionVectors = {
 	FIntPoint(-1, 0)   // 3: West (-X)
 };
 
-void URandWalkGenerator:: SetRandomWalkParams(float InFillRatio, float InBranchChance, 
-	float InDirChangeChance, int32 InMaxWalkers, int32 InSmoothingPasses, bool bInRemoveIslands, int32 InSeed)
+void URandWalkGenerator:: CreateGrid()
 {
-	TargetFillRatio = FMath::Clamp(InFillRatio, 0.1f, 0.95f);
-	BranchingChance = FMath:: Clamp(InBranchChance, 0.0f, 1.0f);
-	DirectionChangeChance = FMath:: Clamp(InDirChangeChance, 0.0f, 1.0f);
-	MaxActiveWalkers = FMath::Max(1, InMaxWalkers);
-	SmoothingPasses = FMath::Max(0, InSmoothingPasses);
-	bRemoveIslands = bInRemoveIslands;
-	RandomSeed = InSeed;
+	if (!bIsInitialized)
+	{
+		UE_LOG(LogTemp, Error, TEXT("RandWalkRoomGenerator:: CreateGrid - Generator not initialized!"));
+		return;
+	}
 
-	// Initialize random stream
-	RandomStream.Initialize(RandomSeed);
+	// Initialize grid with all empty cells (base implementation)
+	Super::CreateGrid();
 
-	UE_LOG(LogTemp, Log, TEXT("RandWalkRoomGenerator:  Parameters set - FillRatio: %.2f, Branch: %.2f, DirChange:%.2f, MaxWalkers:%d, Smooth:%d, Seed:%d"),
-		TargetFillRatio, BranchingChance, DirectionChangeChance, MaxActiveWalkers, SmoothingPasses, RandomSeed);
+	UE_LOG(LogTemp, Log, TEXT("RandWalkRoomGenerator::CreateGrid - Starting random walk generation"));
+
+	// Execute random walk algorithm
+	ExecuteRandomWalk();
+
+	// ✅ CRITICAL: Remove islands FIRST (before smoothing can create new ones)
+	if (bRemoveIslands)
+	{
+		UE_LOG(LogTemp, Log, TEXT("  Removing disconnected regions (pre-smoothing)..."));
+		RemoveDisconnectedRegions();
+	}
+
+	// Post-processing: Smoothing
+	if (SmoothingPasses > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("  Smoothing edges (%d iterations)..."), SmoothingPasses);
+		SmoothGridEdges(SmoothingPasses);
+	}
+
+	// ✅ CRITICAL: Remove islands AGAIN (in case smoothing created new disconnected cells)
+	if (bRemoveIslands)
+	{
+		UE_LOG(LogTemp, Log, TEXT("  Removing disconnected regions (post-smoothing)..."));
+		RemoveDisconnectedRegions();
+	}
+
+	// Validate result
+	if (! ValidateMinimumSize())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RandWalkRoomGenerator::CreateGrid - Generated room is too small!"));
+	}
+
+	// Log statistics
+	TArray<FIntPoint> OccupiedCells = GetOccupiedCells();
+	int32 TotalCells = GridSize.X * GridSize.Y;
+	float ActualFillRatio = (float)OccupiedCells.Num() / (float)TotalCells;
+
+	UE_LOG(LogTemp, Log, TEXT("RandWalkRoomGenerator::CreateGrid - Complete:  %d/%d cells filled (%.2f%%)"),
+		OccupiedCells.Num(), TotalCells, ActualFillRatio * 100.0f);
 }
 
 bool URandWalkGenerator::GenerateFloor()
@@ -130,56 +164,244 @@ bool URandWalkGenerator::GenerateFloor()
 	return true;
 }
 
-void URandWalkGenerator:: CreateGrid()
+void URandWalkGenerator:: SetRandomWalkParams(float InFillRatio, float InBranchChance, 
+                                              float InDirChangeChance, int32 InMaxWalkers, int32 InSmoothingPasses, bool bInRemoveIslands, int32 InSeed)
 {
-	if (!bIsInitialized)
+	TargetFillRatio = FMath::Clamp(InFillRatio, 0.1f, 0.95f);
+	BranchingChance = FMath:: Clamp(InBranchChance, 0.0f, 1.0f);
+	DirectionChangeChance = FMath:: Clamp(InDirChangeChance, 0.0f, 1.0f);
+	MaxActiveWalkers = FMath::Max(1, InMaxWalkers);
+	SmoothingPasses = FMath::Max(0, InSmoothingPasses);
+	bRemoveIslands = bInRemoveIslands;
+	RandomSeed = InSeed;
+
+	// Initialize random stream
+	RandomStream.Initialize(RandomSeed);
+
+	UE_LOG(LogTemp, Log, TEXT("RandWalkRoomGenerator:  Parameters set - FillRatio: %.2f, Branch: %.2f, DirChange:%.2f, MaxWalkers:%d, Smooth:%d, Seed:%d"),
+		TargetFillRatio, BranchingChance, DirectionChangeChance, MaxActiveWalkers, SmoothingPasses, RandomSeed);
+}
+
+void URandWalkGenerator::SetIrregularWallParams(bool bEnabled, float Wall2Chance, float Wall4Chance,
+int32 MinSegmentLen, int32 MaxSegmentLen)
+{
+	bUseIrregularWalls = bEnabled;
+	Prob2CellWall = FMath::Clamp(Wall2Chance, 0.0f, 1.0f);
+	Prob4CellWall = FMath::Clamp(Wall4Chance, 0.0f, 1.0f);
+	MinWallSegmentLength = FMath::Max(2, MinSegmentLen);
+	MaxWallSegmentLength = FMath::Max(MinWallSegmentLength, MaxSegmentLen);
+
+	// Normalize probabilities (only 2Y and 4Y)
+	float Total = Prob2CellWall + Prob4CellWall;
+	if (Total > 0.0f)
 	{
-		UE_LOG(LogTemp, Error, TEXT("RandWalkRoomGenerator:: CreateGrid - Generator not initialized!"));
+		Prob2CellWall /= Total;
+		Prob4CellWall /= Total;
+	}
+	else
+	{
+		// Default to 50/50 split
+		Prob2CellWall = 0.5f;
+		Prob4CellWall = 0.5f;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("RandWalkGenerator:  Irregular walls enabled - 2Y: %.2f (200cm), 4Y: %.2f (400cm)"), 
+		Prob2CellWall, Prob4CellWall);
+	UE_LOG(LogTemp, Log, TEXT("  Segment length:  %d-%d cells"), MinWallSegmentLength, MaxWallSegmentLength);
+}
+
+int32 URandWalkGenerator::GetRandomWallDepth()
+{
+	float Roll = RandomStream.FRand();
+
+	if (Roll < Prob2CellWall) return 2;  // 2-cell wall (200cm)
+	else return 4;  // 4-cell wall (400cm)
+}
+
+void URandWalkGenerator::GenerateIrregularWalls()
+{
+	if (!bUseIrregularWalls)
+	{
+		// Fallback to standard 2-cell uniform walls
+		MarkStandardWalls();
 		return;
 	}
 
-	// Initialize grid with all empty cells (base implementation)
-	Super::CreateGrid();
+	UE_LOG(LogTemp, Log, TEXT("RandWalkGenerator::GenerateIrregularWalls - Creating 2Y/4Y variable-depth walls"));
 
-	UE_LOG(LogTemp, Log, TEXT("RandWalkRoomGenerator::CreateGrid - Starting random walk generation"));
+	// Process each edge separately
+	GenerateIrregularEdgeWalls(EWallEdge:: North);
+	GenerateIrregularEdgeWalls(EWallEdge::South);
+	GenerateIrregularEdgeWalls(EWallEdge::East);
+	GenerateIrregularEdgeWalls(EWallEdge::West);
 
-	// Execute random walk algorithm
-	ExecuteRandomWalk();
+	UE_LOG(LogTemp, Log, TEXT("  Irregular walls complete"));
+}
 
-	// ✅ CRITICAL: Remove islands FIRST (before smoothing can create new ones)
-	if (bRemoveIslands)
+void URandWalkGenerator::GenerateIrregularEdgeWalls(EWallEdge Edge)
+{
+	// Get edge-specific parameters
+	int32 EdgeLength = (Edge == EWallEdge:: North || Edge == EWallEdge:: South) ? GridSize.X : GridSize.Y;
+    
+	int32 CurrentPos = 0;
+	int32 SegmentsCreated = 0;
+    
+	while (CurrentPos < EdgeLength)
 	{
-		UE_LOG(LogTemp, Log, TEXT("  Removing disconnected regions (pre-smoothing)..."));
-		RemoveDisconnectedRegions();
+		// Determine random segment length
+		int32 SegmentLength = RandomStream.RandRange(MinWallSegmentLength, MaxWallSegmentLength);
+		SegmentLength = FMath:: Min(SegmentLength, EdgeLength - CurrentPos);
+
+		// Get random wall depth for this segment (2Y or 4Y)
+		int32 WallDepth = GetRandomWallDepth();
+
+		// Find starting cell on this edge
+		FIntPoint StartCell = GetEdgeCellPosition(Edge, CurrentPos);
+
+		// Extend wall segment
+		ExtendWallSegment(StartCell, Edge, WallDepth, SegmentLength);
+        
+		UE_LOG(LogTemp, Verbose, TEXT("    Edge %d: Pos %d, Length %d cells, Depth %dY (%dcm)"), 
+			(int32)Edge, CurrentPos, SegmentLength, WallDepth, WallDepth * 100);
+
+		CurrentPos += SegmentLength;
+		SegmentsCreated++;
 	}
 
-	// Post-processing: Smoothing
-	if (SmoothingPasses > 0)
+	UE_LOG(LogTemp, Log, TEXT("  Edge %d complete - %d segments created"), (int32)Edge, SegmentsCreated);
+}
+
+void URandWalkGenerator::ExtendWallSegment(FIntPoint StartCell, EWallEdge Edge, int32 Depth, int32 Length)
+{
+	// Determine direction to extend outward from edge (perpendicular to wall)
+	FIntPoint ExtendDir = GetEdgeOutwardDirection(Edge);
+    
+	// Direction along the length of the wall
+	FIntPoint LengthDir = GetEdgeLengthDirection(Edge);
+
+	// Extend outward by Depth cells, along Length cells
+	for (int32 LengthOffset = 0; LengthOffset < Length; ++LengthOffset)
 	{
-		UE_LOG(LogTemp, Log, TEXT("  Smoothing edges (%d iterations)..."), SmoothingPasses);
-		SmoothGridEdges(SmoothingPasses);
+		for (int32 DepthOffset = 0; DepthOffset < Depth; ++DepthOffset)
+		{
+			FIntPoint WallCell = StartCell + (LengthDir * LengthOffset) + (ExtendDir * DepthOffset);
+
+			if (IsValidGridCoordinate(WallCell))
+			{
+				// Only mark as wall if not already floor (preserve interior)
+				if (GetCellState(WallCell) != EGridCellType::ECT_FloorMesh)
+				{
+					SetCellState(WallCell, EGridCellType::ECT_WallMesh);
+				}
+			}
+		}
+	}
+}
+
+FIntPoint URandWalkGenerator::GetEdgeOutwardDirection(EWallEdge Edge) const
+{
+	switch (Edge)
+	{
+	case EWallEdge::North:  return FIntPoint(0, 1);   // Extend upward (+Y)
+	case EWallEdge::South:  return FIntPoint(0, -1);  // Extend downward (-Y)
+	case EWallEdge::East:   return FIntPoint(1, 0);   // Extend right (+X)
+	case EWallEdge::West:   return FIntPoint(-1, 0);  // Extend left (-X)
+	default: return FIntPoint:: ZeroValue;
+	}
+}
+
+FIntPoint URandWalkGenerator::GetEdgeLengthDirection(EWallEdge Edge) const
+{
+	switch (Edge)
+	{
+	case EWallEdge::North:  
+	case EWallEdge::South:   return FIntPoint(1, 0);   // Run along X-axis
+	case EWallEdge::East:  
+	case EWallEdge::West:   return FIntPoint(0, 1);   // Run along Y-axis
+	default: return FIntPoint::ZeroValue;
+	}
+}
+
+FIntPoint URandWalkGenerator::GetEdgeCellPosition(EWallEdge Edge, int32 Offset) const
+{
+	switch (Edge)
+	{
+	case EWallEdge::North:   return FIntPoint(Offset, GridSize.Y - 1);
+	case EWallEdge:: South:  return FIntPoint(Offset, 0);
+	case EWallEdge::East:   return FIntPoint(GridSize.X - 1, Offset);
+	case EWallEdge::West:   return FIntPoint(0, Offset);
+	default: return FIntPoint::ZeroValue;
+	}
+}
+
+bool URandWalkGenerator::IsAdjacentToFloor(FIntPoint Cell, EWallEdge Edge) const
+{
+	// Check if the cell on the interior side is floor
+	FIntPoint InwardDir = GetEdgeOutwardDirection(Edge) * -1;
+	FIntPoint InteriorCell = Cell + InwardDir;
+
+	if (IsValidGridCoordinate(InteriorCell)) return GetCellState(InteriorCell) == EGridCellType::ECT_FloorMesh;
+
+	return false;
+}
+
+void URandWalkGenerator::MarkStandardWalls()
+{
+	// Fallback:  Create uniform 2-cell walls around entire perimeter
+	UE_LOG(LogTemp, Log, TEXT("  Creating standard 2-cell uniform walls"));
+
+	TArray<FIntPoint> BoundaryCells = GetFloorBoundaryCells();
+
+	for (const FIntPoint& Cell : BoundaryCells)
+	{
+		// Mark cell and one outward cell as wall
+		SetCellState(Cell, EGridCellType::ECT_WallMesh);
+
+		// Check each direction and extend outward by 1 cell
+		for (int32 Dir = 0; Dir < 4; ++Dir)
+		{
+			FIntPoint OutwardCell = Cell + GetDirectionVector(Dir);
+            
+			if (IsValidGridCoordinate(OutwardCell) && 
+				GetCellState(OutwardCell) == EGridCellType::ECT_Empty)
+			{
+				SetCellState(OutwardCell, EGridCellType::ECT_WallMesh);
+			}
+		}
+	}
+}
+
+bool URandWalkGenerator::IsFloorBoundaryCell(FIntPoint Cell) const
+{
+	// Check all 4 cardinal directions
+	for (int32 Dir = 0; Dir < 4; ++Dir)
+	{
+		FIntPoint Neighbor = Cell + GetDirectionVector(Dir);
+
+		if (! IsValidGridCoordinate(Neighbor) || GetCellState(Neighbor) == EGridCellType::ECT_Empty) return true;  // Adjacent to empty = boundary
 	}
 
-	// ✅ CRITICAL: Remove islands AGAIN (in case smoothing created new disconnected cells)
-	if (bRemoveIslands)
+	return false;
+}
+
+TArray<FIntPoint> URandWalkGenerator::GetFloorBoundaryCells() const
+{
+	TArray<FIntPoint> BoundaryCells;
+
+	for (int32 X = 0; X < GridSize.X; ++X)
 	{
-		UE_LOG(LogTemp, Log, TEXT("  Removing disconnected regions (post-smoothing)..."));
-		RemoveDisconnectedRegions();
+		for (int32 Y = 0; Y < GridSize.Y; ++Y)
+		{
+			FIntPoint Cell(X, Y);
+
+			if (GetCellState(Cell) == EGridCellType::ECT_FloorMesh)
+			{
+				if (IsFloorBoundaryCell(Cell)) BoundaryCells.Add(Cell);
+			}
+		}
 	}
 
-	// Validate result
-	if (! ValidateMinimumSize())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("RandWalkRoomGenerator::CreateGrid - Generated room is too small!"));
-	}
-
-	// Log statistics
-	TArray<FIntPoint> OccupiedCells = GetOccupiedCells();
-	int32 TotalCells = GridSize.X * GridSize.Y;
-	float ActualFillRatio = (float)OccupiedCells.Num() / (float)TotalCells;
-
-	UE_LOG(LogTemp, Log, TEXT("RandWalkRoomGenerator::CreateGrid - Complete:  %d/%d cells filled (%.2f%%)"),
-		OccupiedCells.Num(), TotalCells, ActualFillRatio * 100.0f);
+	return BoundaryCells;
 }
 
 #pragma region Random Walk Algorithm
