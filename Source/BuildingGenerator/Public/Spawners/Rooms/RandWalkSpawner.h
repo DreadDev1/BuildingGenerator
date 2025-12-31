@@ -3,17 +3,17 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
-#include "MyClass.generated.h"
+#include "RoomSpawner.h"
+#include "RandWalkSpawner.generated.h"
 
 UCLASS()
-class BUILDINGGENERATOR_API AMyClass : public AActor
+class BUILDINGGENERATOR_API ARandWalkSpawner : public ARoomSpawner
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this actor's properties
-	AMyClass();
+	ARandWalkSpawner();
 
 protected:
 	// Called when the game starts or when spawned
