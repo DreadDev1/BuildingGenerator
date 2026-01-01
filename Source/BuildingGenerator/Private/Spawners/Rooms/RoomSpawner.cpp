@@ -4,6 +4,7 @@
 #include "Generators/Rooms/RoomGenerator.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Data/Generation/RoomGenerationTypes.h"
 #include "Data/Room/DoorData.h" 
 #include "RoomActors/Doorway.h"
 #include "Utilities/Generation/RoomGenerationHelpers.h"
@@ -183,7 +184,7 @@ void ARoomSpawner::GenerateFloorMeshes()
 		// Get or create ISM component for this mesh
 		UInstancedStaticMeshComponent* ISM = URoomSpawnerHelpers::GetOrCreateISMComponent(
 			this,
-			PlacedMesh. MeshInfo.MeshAsset,
+			PlacedMesh.MeshInfo.MeshAsset,
 			FloorMeshComponents,
 			TEXT("FloorISM_"),
 			true

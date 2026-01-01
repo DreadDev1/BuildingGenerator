@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Data/Grid/GridData.h"
+#include "Data/Generation/RoomGenerationTypes.h"
 #include "Data/Presets/RoomPreset.h"
 #include "Engine/DataAsset.h"
 #include "RoomData.generated.h"

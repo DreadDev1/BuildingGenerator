@@ -7,35 +7,8 @@
 #include "Data/Room/RoomData.h"
 #include "RoomGenerator.generated.h"
 
-/* Struct to track placed mesh information */
-USTRUCT()
-struct FPlacedMeshInfo
-{
-	GENERATED_BODY()
 
-	// Grid position (top-left cell)
-	UPROPERTY()
-	FIntPoint GridPosition;
-
-	// Size in cells
-	UPROPERTY()
-	FIntPoint Size;
-
-	// Rotation angle (0, 90, 180, 270)
-	UPROPERTY()
-	int32 Rotation;
-
-	// Mesh placement info from data asset
-	UPROPERTY()
-	FMeshPlacementInfo MeshInfo;
-
-	// World transform for spawning
-	UPROPERTY()
-	FTransform LocalTransform;
-
-	FPlacedMeshInfo() : GridPosition(FIntPoint:: ZeroValue), Size(FIntPoint::ZeroValue), Rotation(0) {}
-};
-
+struct FPlacedMeshInfo;
 // Wall segment tracking structure (matches MasterRoom's FWallSegmentInfo)
 USTRUCT()
 struct FGeneratorWallSegment

@@ -1,6 +1,8 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Generators/Rooms/RoomGenerator.h"
+
+#include "Data/Generation/RoomGenerationTypes.h"
 #include "Utilities/Generation/RoomGenerationHelpers.h" 
 #include "Data/Grid/GridData.h"
 #include "Data/Room/CeilingData.h"
@@ -1719,7 +1721,7 @@ bool URoomGenerator::TryPlaceMesh(FIntPoint StartCoord, FIntPoint Size, const FM
 	// Create placed mesh info
 	FPlacedMeshInfo PlacedMesh;
 	PlacedMesh.GridPosition = StartCoord;
-	PlacedMesh.Size = Size;
+	PlacedMesh.GridFootprint = Size;
 	PlacedMesh. Rotation = Rotation;
 	PlacedMesh.MeshInfo = MeshInfo;
 
