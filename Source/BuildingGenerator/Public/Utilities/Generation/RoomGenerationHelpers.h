@@ -3,11 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/Generation/RoomGenerationTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Data/Grid/GridData.h"
 #include "RoomGenerationHelpers.generated.h"
-
-struct FPresetRegion;
 
 UCLASS()
 class BUILDINGGENERATOR_API URoomGenerationHelpers : public UBlueprintFunctionLibrary
@@ -60,55 +59,7 @@ class BUILDINGGENERATOR_API URoomGenerationHelpers : public UBlueprintFunctionLi
 	static bool TryPlaceMeshInGrid(TArray<EGridCellType>& GridState, FIntPoint GridSize, FIntPoint StartCoord,
 	FIntPoint Size,	EGridCellType PlacementType = EGridCellType::ECT_FloorMesh);
 #pragma endregion
-	
-#pragma region Region Utilities
-	/** Check if a coordinate is within a region's bounds
-	 * @param Coordinate - Grid coordinate to check
-	 * @param Region - Region to check against
-	 * @return True if coordinate is inside region */
-	UFUNCTION(BlueprintPure, Category = "Dungeon Generation|Regions")
-	static bool IsCoordinateInRegion(
-		FIntPoint Coordinate,
-		const FPresetRegion& Region
-	);
 
-	/** Get all cells within a region
-	 * @param Region - Region to get cells from
-	 * @return Array of all grid coordinates in the region */
-	UFUNCTION(BlueprintPure, Category = "Dungeon Generation|Regions")
-	static TArray<FIntPoint> GetCellsInRegion(
-		const FPresetRegion& Region
-	);
-
-	/** Check if two regions overlap
-	 * @param RegionA - First region
-	 * @param RegionB - Second region
-	 * @return True if regions share any cells */
-	UFUNCTION(BlueprintPure, Category = "Dungeon Generation|Regions")
-	static bool DoRegionsOverlap(
-		const FPresetRegion& RegionA,
-		const FPresetRegion& RegionB
-	);
-
-	/** Get the size of a region in cells
-	 * @param Region - Region to measure
-	 * @return Size as FIntPoint (X = width, Y = height) */
-	UFUNCTION(BlueprintPure, Category = "Dungeon Generation|Regions")
-	static FIntPoint GetRegionSize(
-		const FPresetRegion& Region
-	);
-
-	/** Check if a region fits within grid bounds
-	 * @param Region - Region to validate
-	 * @param GridSize - Size of the grid
-	 * @return True if region is completely within grid */
-	UFUNCTION(BlueprintPure, Category = "Dungeon Generation|Regions")
-	static bool IsRegionWithinGrid(
-		const FPresetRegion& Region,
-		FIntPoint GridSize
-	);
-#pragma endregion
-	
 #pragma region Rotation & Footprint Operations
 	/** Calculate rotated footprint for a mesh
 	* @param OriginalFootprint - footprint dimensions@param RotationDegrees -  (0, 90, 180, 270)* @return Rotated footprint */

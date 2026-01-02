@@ -70,20 +70,7 @@ public:
 	/** Clear a rectangular area (set to Empty) * @param StartCoord - Top-left corner of area @param Size - Size of area in cells (X, Y) */
 	bool ClearArea(FIntPoint StartCoord, FIntPoint Size);
 #pragma endregion
-	
-#pragma region RoomPreset Layout Management
-	/* Check if using preset layout */
-	UFUNCTION(BlueprintPure, Category = "Room Generation")
-	bool IsUsingPresetLayout() const;
 
-	/* Get preset layout (if using one) */
-	UFUNCTION(BlueprintPure, Category = "Room Generation")
-	URoomPreset* GetPresetLayout() const;
-
-	/* Get region at specific coordinate (returns nullptr if no region or not using preset) */
-	const FPresetRegion* GetRegionAtCoordinate(FIntPoint GridCoordinate) const;
-#pragma endregion
-	
 #pragma region Floor Generation
 
 	/* Generate floor meshes using sequential weighted fill algorithm */

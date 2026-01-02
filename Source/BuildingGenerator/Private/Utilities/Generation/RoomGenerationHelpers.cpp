@@ -2,7 +2,7 @@
 
 #include "Utilities/Generation/RoomGenerationHelpers.h"
 
-#include "Data/Presets/RoomPreset.h"
+#include "Data/Generation/RoomGenerationTypes.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshSocket.h"
 
@@ -114,63 +114,6 @@ FIntPoint Size, EGridCellType PlacementType)
 
 	// Mark cells as occupied
 	MarkCellsOccupied(GridState, GridSize, StartCoord, Size, PlacementType);
-
-	return true;
-}
-#pragma endregion
-
-#pragma region Region Utilities
-bool URoomGenerationHelpers::IsCoordinateInRegion(FIntPoint Coordinate, const FPresetRegion& Region)
-{
-	// Region bounds are inclusive (StartCell and EndCell are both inside the region)
-	return Coordinate.X >= Region.StartCell. X && Coordinate.X <= Region. EndCell.X &&
-		Coordinate.Y >= Region.StartCell.Y && Coordinate.Y <= Region.EndCell.Y;
-}
-
-TArray<FIntPoint> URoomGenerationHelpers::GetCellsInRegion(const FPresetRegion& Region)
-{
-	TArray<FIntPoint> Cells;
-	// Iterate through all cells in the region (inclusive bounds)
-	for (int32 X = Region.StartCell.X; X <= Region.EndCell.X; ++X)
-	{
-		for (int32 Y = Region. StartCell.Y; Y <= Region.EndCell.Y; ++Y) { Cells.Add(FIntPoint(X, Y)); }
-	}
-	return Cells;
-}
-
-bool URoomGenerationHelpers::DoRegionsOverlap(const FPresetRegion& RegionA, const FPresetRegion& RegionB)
-{
-	// Check if regions are completely separated (no overlap)
-	// If one region is completely to the left, right, above, or below the other, they don't overlap
-	
-	if (RegionA.EndCell.X < RegionB. StartCell.X)   return false; // A is completely left of B
-	if (RegionA.StartCell.X > RegionB.EndCell.X)   return false; // A is completely right of B
-	if (RegionA.EndCell.Y < RegionB.StartCell.Y)   return false; // A is completely above B
-	if (RegionA.StartCell.Y > RegionB.EndCell.Y)   return false; // A is completely below B
-
-	// If none of the above, they must overlap
-	return true;
-}
-
-FIntPoint URoomGenerationHelpers::GetRegionSize(const FPresetRegion& Region)
-{
-	// Size = (End - Start) + 1 (since bounds are inclusive)
-	int32 Width = (Region.EndCell.X - Region.StartCell.X) + 1;
-	int32 Height = (Region.EndCell.Y - Region.StartCell.Y) + 1;
-
-	return FIntPoint(Width, Height);
-}
-
-bool URoomGenerationHelpers::IsRegionWithinGrid(const FPresetRegion& Region, FIntPoint GridSize)
-{
-	// Check if region start is within bounds
-	if (Region.StartCell. X < 0 || Region. StartCell.Y < 0)	return false;
-
-	// Check if region end is within bounds
-	if (Region.EndCell.X >= GridSize.X || Region.EndCell.Y >= GridSize.Y) return false;
-
-	// Check if region is valid (start <= end)
-	if (Region.StartCell.X > Region.EndCell.X || Region.StartCell.Y > Region. EndCell.Y) return false;
 
 	return true;
 }

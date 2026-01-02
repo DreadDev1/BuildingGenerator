@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Data/Generation/RoomGenerationTypes.h"
-#include "Data/Presets/RoomPreset.h"
 #include "Engine/DataAsset.h"
 #include "RoomData.generated.h"
 
@@ -21,15 +20,6 @@ class BUILDINGGENERATOR_API URoomData : public UDataAsset
 	GENERATED_BODY()
 
 public:
-#pragma region PresetRoom Properties
-	/* Optional preset layout for this room (if set, uses regions instead of full-room generation) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Room Preset Layout")
-	TSoftObjectPtr<URoomPreset> PresetLayout;
-
-	/* Use preset layout instead of standard generation?  */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Room Preset Layout")
-	bool bUsePresetLayout = false;
-#pragma endregion
 	
 #pragma region Floor Style Data
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Styles")

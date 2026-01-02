@@ -135,27 +135,6 @@ bool URoomGenerator::ClearArea(FIntPoint StartCoord, FIntPoint Size)
 
 #pragma endregion
 
-#pragma region RoomPreset Layout Management
-bool URoomGenerator::IsUsingPresetLayout() const
-{
-	if (! RoomData || !bIsInitialized) return false;
-	return RoomData->bUsePresetLayout && ! RoomData->PresetLayout. IsNull();
-}
-
-URoomPreset* URoomGenerator::GetPresetLayout() const
-{
-	if (!IsUsingPresetLayout()) return nullptr;
-	return RoomData->PresetLayout.LoadSynchronous();
-}
-
-const FPresetRegion* URoomGenerator::GetRegionAtCoordinate(FIntPoint GridCoordinate) const
-{
-	URoomPreset* PresetLayout = GetPresetLayout();
-	if (!PresetLayout) return nullptr;
-	return PresetLayout->GetRegionAtCoordinate(GridCoordinate, GridSize);
-}
-#pragma endregion
-
 #pragma region Floor Generation
 bool URoomGenerator::GenerateFloor()
 {
