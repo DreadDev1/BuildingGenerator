@@ -9,54 +9,8 @@
 
 
 struct FPlacedMeshInfo;
-// Wall segment tracking structure (matches MasterRoom's FWallSegmentInfo)
-USTRUCT()
-struct FGeneratorWallSegment
-{
-	GENERATED_BODY()
-
-	EWallEdge Edge;
-	int32 StartCell;
-	int32 SegmentLength;
-	FTransform BaseTransform;
-	UStaticMesh* BaseMesh;
-	const FWallModule* WallModule;  // Reference to module for Middle/Top
-
-	FGeneratorWallSegment() : Edge(EWallEdge::North), StartCell(0), SegmentLength(0), BaseMesh(nullptr), WallModule(nullptr) {}
-};
-
-/* Information about a placed ceiling tile */
-USTRUCT(BlueprintType)
-struct FPlacedCeilingInfo
-{
-	GENERATED_BODY()
-	// Grid position (top-left cell)
-	UPROPERTY()
-	FIntPoint GridCoordinate;
-
-	// Size in cells (tile size like 4x4, 2x2, 1x1)
-	UPROPERTY()
-	FIntPoint TileSize;
-
-	// Rotation angle (0, 90, 180, 270) - if needed
-	UPROPERTY()
-	int32 Rotation;
-
-	// Mesh placement info from data asset
-	UPROPERTY()
-	FMeshPlacementInfo MeshInfo;
-
-	// World transform for spawning
-	UPROPERTY()
-	FTransform LocalTransform;  // ← CHANGED:  Match floor naming
-
-	// Constructor with proper initialization
-	FPlacedCeilingInfo() 
-		: GridCoordinate(FIntPoint::  ZeroValue)
-		, TileSize(FIntPoint:: ZeroValue)
-		, Rotation(0)
-	{}
-};
+struct FGeneratorWallSegment;
+struct FPlacedCeilingInfo;
 
 /* RoomGenerator - Pure logic class for room generation Handles grid creation, mesh placement algorithms, and room data processing */
 UCLASS()
