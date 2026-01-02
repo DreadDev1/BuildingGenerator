@@ -44,11 +44,20 @@ void UChunkyRoomGenerator::CreateGrid()
 		return;
 	}
 
-	// Initialize grid with all empty cells
-	Super::CreateGrid();
-
-	UE_LOG(LogTemp, Log, TEXT("ChunkyRoomGenerator:: CreateGrid - Starting chunky generation"));
-
+	// Initialize grid with ALL cells as BOUNDARY (non-fillable)
+	int32 TotalCells = GridSize.X * GridSize.Y;
+	GridState.Empty(TotalCells);
+	GridState.AddUninitialized(TotalCells);
+	
+	// Mark all cells as boundary (non-fillable) by default
+	for (int32 i = 0; i < TotalCells; ++i)
+	{
+		GridState[i] = EGridCellType:: ECT_WallMesh;  // ← Non-chunk cells marked as boundary
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("ChunkyRoomGenerator::CreateGrid - Starting chunky generation (Grid:  %dx%d, Total cells: %d)"),
+			GridSize.X, GridSize.Y, TotalCells);
+	
 	// Execute chunky generation algorithm
 	ExecuteChunkyGeneration();
 	
@@ -58,13 +67,140 @@ void UChunkyRoomGenerator::CreateGrid()
 		UE_LOG(LogTemp, Warning, TEXT("ChunkyRoomGenerator::CreateGrid - Generated room is too small!"));
 	}
 
-	// Log statistics
-	int32 TotalCells = GridSize.X * GridSize.Y;
-	int32 FloorCells = GetCellCountByType(EGridCellType::ECT_FloorMesh);
-	float FillRatio = (float)FloorCells / (float)TotalCells;
+	// ✅ NEW: Log detailed statistics
+	int32 FillableCells = GetCellCountByType(EGridCellType:: ECT_Empty);
+	int32 BoundaryCells = GetCellCountByType(EGridCellType::ECT_WallMesh);
+	float FillRatio = (float)FillableCells / (float)TotalCells;
+	
+	UE_LOG(LogTemp, Log, TEXT("ChunkyRoomGenerator::CreateGrid - Complete: "));
+	UE_LOG(LogTemp, Log, TEXT("  Chunks placed: %d"), PlacedChunks.Num());
+	UE_LOG(LogTemp, Log, TEXT("  Fillable cells (ECT_Empty): %d (%.2f%%)"), FillableCells, FillRatio * 100.0f);
+	UE_LOG(LogTemp, Log, TEXT("  Boundary cells (ECT_WallMesh): %d"), BoundaryCells);
+	UE_LOG(LogTemp, Log, TEXT("  Total cells:  %d"), TotalCells);
+}
 
-	UE_LOG(LogTemp, Log, TEXT("ChunkyRoomGenerator::CreateGrid - Complete: %d chunks, %d/%d cells filled (%.2f%%)"),
-		PlacedChunks.Num(), FloorCells, TotalCells, FillRatio * 100.0f);
+void UChunkyRoomGenerator::MarkChunkCells(const FRoomChunk& Chunk)
+{
+	for (int32 X = 0; X < Chunk.Size.X; ++X)
+	{
+		for (int32 Y = 0; Y < Chunk.Size.Y; ++Y)
+		{
+			FIntPoint Cell = Chunk.Position + FIntPoint(X, Y);
+			SetCellState(Cell, EGridCellType::ECT_Empty);
+		}
+	}
+	UE_LOG(LogTemp, Verbose, TEXT("    Marked chunk at (%d,%d) size %dx%d as fillable"),
+		Chunk.Position.X, Chunk.Position. Y, Chunk.Size.X, Chunk.Size.Y);
+}
+
+bool UChunkyRoomGenerator::ValidateMinimumSize()
+{
+	// ✅ CHANGED: Check for ECT_Empty (fillable cells) instead of ECT_FloorMesh
+	int32 FillableCells = GetCellCountByType(EGridCellType::ECT_Empty);
+	const int32 MinCells = 16;  // Minimum 4x4 equivalent
+
+	bool bValid = FillableCells >= MinCells;
+	if (!bValid)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("  Validation failed: Only %d fillable cells (minimum:  %d)"),
+			FillableCells, MinCells);
+	}
+
+	return bValid;
+}
+
+FIntPoint UChunkyRoomGenerator::GetRandomChunkSize()
+{
+	float Roll = RandomStream.FRand();
+
+	if (Roll < Chunk2x2Chance)
+	{
+		return FIntPoint(2, 2);  // 2x2 chunk (200x200cm)
+	}
+	else if (Roll < Chunk2x2Chance + Chunk4x4Chance)
+	{
+		return FIntPoint(4, 4);  // 4x4 chunk (400x400cm)
+	}
+	else
+	{
+		// Rectangular chunk (2x4 or 4x2)
+		bool bHorizontal = RandomStream.FRand() > 0.5f;
+		return bHorizontal ? FIntPoint(4, 2) : FIntPoint(2, 4);
+	}
+}
+
+bool UChunkyRoomGenerator::IsValidChunkPlacement(const FRoomChunk& Chunk) const
+{
+	// Check bounds
+	if (Chunk.Position.X < 0 || Chunk.Position.Y < 0 ||
+		Chunk.Position. X + Chunk.Size.X > GridSize.X ||
+		Chunk.Position.Y + Chunk.Size.Y > GridSize. Y)
+	{
+		return false;
+	}
+
+	// Check for overlap with existing chunks
+	for (const FRoomChunk& ExistingChunk : PlacedChunks)
+	{
+		if (Chunk. Overlaps(ExistingChunk))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool UChunkyRoomGenerator::TryPlaceAdjacentChunk(const FRoomChunk& NewChunk)
+{
+	// Check if valid placement
+	if (!IsValidChunkPlacement(NewChunk))
+	{
+		return false;
+	}
+
+	// Check if adjacent to at least one existing chunk
+	for (const FRoomChunk& ExistingChunk : PlacedChunks)
+	{
+		if (NewChunk.IsAdjacentTo(ExistingChunk))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+TArray<FIntPoint> UChunkyRoomGenerator::GetAdjacentPositions() const
+{
+	TArray<FIntPoint> Positions;
+	TSet<FIntPoint> UniquePositions;
+
+	// For each placed chunk, get positions around it
+	for (const FRoomChunk& Chunk : PlacedChunks)
+	{
+		// Possible adjacent positions (cardinal directions)
+		TArray<FIntPoint> Offsets = {
+			FIntPoint(Chunk.Size.X, 0),  // East
+			FIntPoint(-2, 0),             // West (assuming min chunk size 2)
+			FIntPoint(0, Chunk.Size.Y),  // North
+			FIntPoint(0, -2)              // South
+		};
+
+		for (const FIntPoint& Offset : Offsets)
+		{
+			FIntPoint NewPos = Chunk. Position + Offset;
+			
+			// Basic bounds check
+			if (NewPos. X >= 0 && NewPos.Y >= 0 &&
+				NewPos.X < GridSize.X - 2 && NewPos.Y < GridSize.Y - 2)
+			{
+				UniquePositions.Add(NewPos);
+			}
+		}
+	}
+
+	return UniquePositions.Array();
 }
 
 void UChunkyRoomGenerator:: ExecuteChunkyGeneration()
@@ -135,116 +271,13 @@ void UChunkyRoomGenerator:: ExecuteChunkyGeneration()
 	UE_LOG(LogTemp, Log, TEXT("  Chunky generation complete - Placed %d chunks"), PlacedChunks.Num());
 }
 
-FIntPoint UChunkyRoomGenerator::GetRandomChunkSize()
-{
-	float Roll = RandomStream.FRand();
 
-	if (Roll < Chunk2x2Chance)
-	{
-		return FIntPoint(2, 2);  // 2x2 chunk (200x200cm)
-	}
-	else if (Roll < Chunk2x2Chance + Chunk4x4Chance)
-	{
-		return FIntPoint(4, 4);  // 4x4 chunk (400x400cm)
-	}
-	else
-	{
-		// Rectangular chunk (2x4 or 4x2)
-		bool bHorizontal = RandomStream.FRand() > 0.5f;
-		return bHorizontal ? FIntPoint(4, 2) : FIntPoint(2, 4);
-	}
-}
 
-bool UChunkyRoomGenerator::TryPlaceAdjacentChunk(const FRoomChunk& NewChunk)
-{
-	// Check if valid placement
-	if (!IsValidChunkPlacement(NewChunk))
-	{
-		return false;
-	}
 
-	// Check if adjacent to at least one existing chunk
-	for (const FRoomChunk& ExistingChunk : PlacedChunks)
-	{
-		if (NewChunk.IsAdjacentTo(ExistingChunk))
-		{
-			return true;
-		}
-	}
 
-	return false;
-}
 
-bool UChunkyRoomGenerator::IsValidChunkPlacement(const FRoomChunk& Chunk) const
-{
-	// Check bounds
-	if (Chunk.Position.X < 0 || Chunk.Position.Y < 0 ||
-	    Chunk.Position. X + Chunk.Size.X > GridSize.X ||
-	    Chunk.Position.Y + Chunk.Size.Y > GridSize. Y)
-	{
-		return false;
-	}
 
-	// Check for overlap with existing chunks
-	for (const FRoomChunk& ExistingChunk : PlacedChunks)
-	{
-		if (Chunk. Overlaps(ExistingChunk))
-		{
-			return false;
-		}
-	}
 
-	return true;
-}
 
-void UChunkyRoomGenerator::MarkChunkCells(const FRoomChunk& Chunk)
-{
-	for (int32 X = 0; X < Chunk.Size.X; ++X)
-	{
-		for (int32 Y = 0; Y < Chunk.Size.Y; ++Y)
-		{
-			FIntPoint Cell = Chunk.Position + FIntPoint(X, Y);
-			SetCellState(Cell, EGridCellType::ECT_FloorMesh);
-		}
-	}
-}
 
-TArray<FIntPoint> UChunkyRoomGenerator::GetAdjacentPositions() const
-{
-	TArray<FIntPoint> Positions;
-	TSet<FIntPoint> UniquePositions;
 
-	// For each placed chunk, get positions around it
-	for (const FRoomChunk& Chunk : PlacedChunks)
-	{
-		// Possible adjacent positions (cardinal directions)
-		TArray<FIntPoint> Offsets = {
-			FIntPoint(Chunk.Size.X, 0),  // East
-			FIntPoint(-2, 0),             // West (assuming min chunk size 2)
-			FIntPoint(0, Chunk.Size.Y),  // North
-			FIntPoint(0, -2)              // South
-		};
-
-		for (const FIntPoint& Offset : Offsets)
-		{
-			FIntPoint NewPos = Chunk. Position + Offset;
-			
-			// Basic bounds check
-			if (NewPos. X >= 0 && NewPos.Y >= 0 &&
-			    NewPos.X < GridSize.X - 2 && NewPos.Y < GridSize.Y - 2)
-			{
-				UniquePositions.Add(NewPos);
-			}
-		}
-	}
-
-	return UniquePositions.Array();
-}
-
-bool UChunkyRoomGenerator::ValidateMinimumSize()
-{
-	int32 FloorCells = GetCellCountByType(EGridCellType::ECT_FloorMesh);
-	const int32 MinCells = 16;  // Minimum 4x4 equivalent
-
-	return FloorCells >= MinCells;
-}
