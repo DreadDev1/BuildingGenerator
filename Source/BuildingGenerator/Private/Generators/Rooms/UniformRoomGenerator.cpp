@@ -143,8 +143,98 @@ bool UUniformRoomGenerator::GenerateWalls()
 
 bool UUniformRoomGenerator::GenerateCorners()
 {
-	// Will implement in Step 5
-	return false;
+ if (!bIsInitialized)
+    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator:: GenerateCorners - Generator not initialized! ")); return false; }
+
+    if (! RoomData || RoomData->WallStyleData. IsNull())
+    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator:: GenerateCorners - WallStyleData not assigned!")); return false; }
+
+    WallData = RoomData->WallStyleData.LoadSynchronous();
+    if (!WallData)
+    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateCorners - Failed to load WallStyleData!")); return false; }
+
+    // Clear previous corners
+    ClearPlacedCorners();
+
+    UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateCorners - Starting corner generation"));
+
+    // Load corner mesh (required)
+    if (WallData->DefaultCornerMesh.IsNull())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("URoomGenerator::GenerateCorners - No default corner mesh defined, skipping corners"));
+        return true; 
+    }
+
+    UStaticMesh* CornerMesh = WallData->DefaultCornerMesh.LoadSynchronous();
+    if (!CornerMesh)
+    { UE_LOG(LogTemp, Warning, TEXT("URoomGenerator::GenerateCorners - Failed to load corner mesh")); return false;		}
+
+     
+    // Define corner data (matching MasterRoom's clockwise order:  SW, SE, NE, NW)
+	struct FCornerData
+    {
+        ECornerPosition Position;
+        FVector BasePosition;  // Grid corner position (before offset)
+        FRotator Rotation;     // From WallData
+        FVector Offset;        // Per-corner offset from WallData
+        FString Name;          // For logging
+    };
+
+    TArray<FCornerData> Corners = {
+        { 
+            ECornerPosition::SouthWest, 
+            FVector(0.0f, 0.0f, 0.0f),  // Bottom-left
+            WallData->SouthWestCornerRotation, 
+            WallData->SouthWestCornerOffset,
+            TEXT("SouthWest")
+        },
+        { 
+            ECornerPosition::SouthEast, 
+            FVector(0.0f, GridSize.Y * CellSize, 0.0f),  // Bottom-right
+            WallData->SouthEastCornerRotation, 
+            WallData->SouthEastCornerOffset,
+            TEXT("SouthEast")
+        },
+        { 
+            ECornerPosition::NorthEast, 
+            FVector(GridSize.X * CellSize, GridSize.Y * CellSize, 0.0f),  // Top-right
+            WallData->NorthEastCornerRotation, 
+            WallData->NorthEastCornerOffset,
+            TEXT("NorthEast")
+        },
+        { 
+            ECornerPosition:: NorthWest, 
+            FVector(GridSize.X * CellSize, 0.0f, 0.0f),  // Top-left
+            WallData->NorthWestCornerRotation, 
+            WallData->NorthWestCornerOffset,
+            TEXT("NorthWest")
+        }
+    };
+     
+    // Generate each corner
+    for (const FCornerData& CornerData : Corners)
+    {
+        // Apply designer offset to base position
+        FVector FinalPosition = CornerData. BasePosition + CornerData. Offset;
+
+        // Create transform (local/component space)
+        FTransform CornerTransform(CornerData.Rotation, FinalPosition, FVector:: OneVector);
+
+        // Create placed corner info
+        FPlacedCornerInfo PlacedCorner;
+        PlacedCorner.Corner = CornerData. Position;
+        PlacedCorner.CornerMesh = WallData->DefaultCornerMesh;
+        PlacedCorner.Transform = CornerTransform;
+
+        PlacedCornerMeshes.Add(PlacedCorner);
+
+        UE_LOG(LogTemp, Verbose, TEXT("  Placed %s corner at position %s with rotation (%.0f, %.0f, %.0f)"),
+        *CornerData.Name,  *FinalPosition.ToString(), CornerData. Rotation.Roll, CornerData.Rotation. Pitch, CornerData.Rotation.Yaw);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateCorners - Complete.  Placed %d corners"), PlacedCornerMeshes.Num());
+
+    return true;
 }
 
 bool UUniformRoomGenerator::GenerateDoorways()
