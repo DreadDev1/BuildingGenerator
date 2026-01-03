@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Data/Grid/GridData.h"
+#include "Data/Room/FloorData.h"
 #include "Data/Room/RoomData.h"
 #include "RoomGenerator.generated.h"
 
@@ -73,6 +74,9 @@ public:
 
 #pragma region Floor Generation
 
+	UPROPERTY(EditAnywhere)
+	UFloorData* FloorData;
+	
 	/* Generate floor meshes using sequential weighted fill algorithm */
 	virtual bool GenerateFloor();
 
@@ -103,7 +107,6 @@ public:
 #pragma endregion
 
 #pragma region Wall Generation
-
 	/* Generate walls for all four edges Uses greedy bin packing (largest modules first) */
 	virtual bool GenerateWalls();
 
