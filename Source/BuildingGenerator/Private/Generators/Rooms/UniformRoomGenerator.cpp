@@ -95,8 +95,50 @@ if (!bIsInitialized)
 
 bool UUniformRoomGenerator::GenerateWalls()
 {
-	// Will implement in Step 4
-	return false;
+	if (!bIsInitialized)
+	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateWalls - Generator not initialized! ")); return false; }
+
+	if (!RoomData || RoomData->WallStyleData.IsNull())
+	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateWalls - WallStyleData not assigned!")); return false; }
+
+	WallData = RoomData->WallStyleData.LoadSynchronous();
+	if (!WallData || WallData->AvailableWallModules.Num() == 0)
+	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateWalls - No wall modules defined!"));	return false; }
+	
+	// Clear previous data
+	ClearPlacedWalls();
+	PlacedBaseWallSegments.Empty();  // ✅ Clear tracking array
+
+	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateWalls - Starting wall generation"));
+
+	// PHASE 0:   GENERATE DOORWAYS FIRST (Before any walls are placed!)
+	UE_LOG(LogTemp, Log, TEXT("  Phase 0: Generating doorways"));
+	if (! GenerateDoorways())
+	{ UE_LOG(LogTemp, Warning, TEXT("  Doorway generation failed, continuing with walls")); }
+	else
+	{ UE_LOG(LogTemp, Log, TEXT("  Doorways generated:   %d"), PlacedDoorwayMeshes. Num()); }
+	
+	// PHASE 1: FORCED WALL PLACEMENTS
+	int32 ForcedCount = ExecuteForcedWallPlacements();
+	if (ForcedCount > 0) UE_LOG(LogTemp, Log, TEXT("  Phase 0: Placed %d forced walls"), ForcedCount);
+	
+	// PHASE 2: Generate base walls for each edge
+	FillWallEdge(EWallEdge::North);
+	FillWallEdge(EWallEdge::South);
+	FillWallEdge(EWallEdge::East);
+	FillWallEdge(EWallEdge::West);
+
+	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateWalls - Base walls tracked:  %d segments"), PlacedBaseWallSegments.Num());
+
+	// PASS 3: Spawn middle layers using socket-based stacking
+	SpawnMiddleWallLayers();
+
+	// PASS 4: Spawn top layer using socket-based stacking
+	SpawnTopWallLayer();
+
+	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateWalls - Complete.  Total wall records: %d"), PlacedWallMeshes.Num());
+
+	return true;
 }
 
 bool UUniformRoomGenerator::GenerateCorners()

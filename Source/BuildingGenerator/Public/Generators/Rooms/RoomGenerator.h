@@ -5,8 +5,10 @@
 #include "CoreMinimal.h"
 #include "Data/Grid/GridData.h"
 #include "Data/Room/FloorData.h"
+#include "Data/Room/WallData.h"
 #include "Data/Room/RoomData.h"
 #include "RoomGenerator.generated.h"
+
 
 
 struct FPlacedMeshInfo;
@@ -107,6 +109,10 @@ public:
 #pragma endregion
 
 #pragma region Wall Generation
+	
+	UPROPERTY(EditAnywhere)
+	UWallData* WallData;
+	
 	/* Generate walls for all four edges Uses greedy bin packing (largest modules first) */
 	virtual bool GenerateWalls();
 
