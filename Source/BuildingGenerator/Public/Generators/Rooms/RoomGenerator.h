@@ -128,7 +128,7 @@ public:
 #pragma region Corner Generation
 
 	/* Generate corner pieces for all 4 corners */
-	bool GenerateCorners();
+	virtual bool GenerateCorners();
 
 	/* Get list of placed corners */
 	const TArray<FPlacedCornerInfo>& GetPlacedCorners() const { return PlacedCornerMeshes; }
