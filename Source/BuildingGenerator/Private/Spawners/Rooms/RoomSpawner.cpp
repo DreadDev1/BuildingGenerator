@@ -6,6 +6,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Data/Generation/RoomGenerationTypes.h"
 #include "Data/Room/DoorData.h" 
+#include "Generators/Rooms/UniformRoomGenerator.h"
 #include "RoomActors/Doorway.h"
 #include "Utilities/Generation/RoomGenerationHelpers.h"
 #include "Utilities/Spawners/RoomSpawnerHelpers.h" 
@@ -22,10 +23,10 @@ ARoomSpawner::ARoomSpawner()
 	// Create debug helpers component
 	DebugHelpers = CreateDefaultSubobject<UDebugHelpers>(TEXT("DebugHelpers"));
 
-	// NEW: Bind delegate so DebugHelpers can request text components
+	// Bind delegate so DebugHelpers can request text components
 	DebugHelpers->OnCreateTextComponent.BindUObject(this, &ARoomSpawner::CreateTextRenderComponent);
 
-	// ✅ NEW: Bind destruction delegate
+	// Bind destruction delegate
 	DebugHelpers->OnDestroyTextComponent. BindUObject(this, &ARoomSpawner::DestroyTextRenderComponent);
 
 	DoorwayActorClass = ADoorway::StaticClass();
@@ -46,7 +47,7 @@ bool ARoomSpawner::EnsureGeneratorReady()
 	if (!RoomGenerator)
 	{
 		DebugHelpers->LogVerbose(TEXT("Creating RoomGenerator..."));
-		RoomGenerator = NewObject<URoomGenerator>(this, TEXT("RoomGenerator"));
+		RoomGenerator = NewObject<UUniformRoomGenerator>(this, TEXT("UniformRoomGenerator"));
 		if (!RoomGenerator)
 		{ DebugHelpers->LogCritical(TEXT("Failed to create RoomGenerator! ")); return false; }
 	}
