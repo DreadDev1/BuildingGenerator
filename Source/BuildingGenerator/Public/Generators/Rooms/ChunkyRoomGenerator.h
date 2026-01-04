@@ -6,50 +6,6 @@
 #include "Generators/Rooms/RoomGenerator.h"
 #include "ChunkyRoomGenerator.generated.h"
 
-/** Struct to represent a rectangular chunk */
-USTRUCT()
-struct FRoomChunk
-{
-	GENERATED_BODY()
-
-	/** Top-left position of chunk in grid coordinates */
-	UPROPERTY()
-	FIntPoint Position;
-
-	/** Size of chunk (Width x Height in cells) */
-	UPROPERTY()
-	FIntPoint Size;
-
-	FRoomChunk() :  Position(FIntPoint::ZeroValue), Size(FIntPoint::ZeroValue) {}
-	FRoomChunk(FIntPoint InPos, FIntPoint InSize) : Position(InPos), Size(InSize) {}
-
-	/** Check if this chunk overlaps with another */
-	bool Overlaps(const FRoomChunk& Other) const
-	{
-		return !(Position.X >= Other.Position.X + Other. Size.X ||
-		         Position.X + Size.X <= Other.Position.X ||
-		         Position.Y >= Other. Position.Y + Other.Size. Y ||
-		         Position.Y + Size.Y <= Other.Position.Y);
-	}
-
-	/** Check if this chunk is adjacent to another (shares edge) */
-	bool IsAdjacentTo(const FRoomChunk& Other) const
-	{
-		// Check if they share an edge (touching but not overlapping)
-		bool SharesVerticalEdge = (Position.X + Size.X == Other.Position.X || Other.Position.X + Other.Size.X == Position.X) &&
-		                          !(Position.Y >= Other.Position.Y + Other.Size.Y || Position.Y + Size.Y <= Other.Position.Y);
-		
-		bool SharesHorizontalEdge = (Position.Y + Size.Y == Other.Position.Y || Other.Position.Y + Other.Size.Y == Position.Y) &&
-		                            !(Position.X >= Other. Position.X + Other.Size. X || Position.X + Size.X <= Other.Position.X);
-
-		return SharesVerticalEdge || SharesHorizontalEdge;
-	}
-};
-
-/**
- * UChunkyRoomGenerator - Generates irregular room shapes by combining rectangular chunks
- * Creates rooms with straight edges and 2-cell or 4-cell wall segments
- */
 UCLASS()
 class BUILDINGGENERATOR_API UChunkyRoomGenerator : public URoomGenerator
 {
@@ -59,43 +15,69 @@ public:
 	/** Override:  Create chunky grid pattern */
 	virtual void CreateGrid() override;
 	
-	/** Initialize with chunky generation parameters */
-	void SetChunkyParams(int32 InMinChunks, int32 InMaxChunks, float InChunk2x2Chance, 
-						 float InChunk4x4Chance, float InChunkRectChance, int32 InSeed);
-
-private:
-	// Chunky generation parameters
-	int32 MinChunks;           // Minimum number of chunks to place
-	int32 MaxChunks;           // Maximum number of chunks to place
-	float Chunk2x2Chance;      // Probability of 2x2 chunk
-	float Chunk4x4Chance;      // Probability of 4x4 chunk
-	float ChunkRectChance;     // Probability of rectangular chunk (2x4, 4x2)
-	int32 RandomSeed;          // Seed for deterministic generation
-
-	// Random stream for deterministic generation
-	FRandomStream RandomStream;
-
-	// Placed chunks
-	TArray<FRoomChunk> PlacedChunks;
-
-	/** Execute the chunky generation algorithm */
-	void ExecuteChunkyGeneration();
-
-	/** Get random chunk size based on probabilities */
-	FIntPoint GetRandomChunkSize();
-
-	/** Try to place a chunk adjacent to existing chunks */
-	bool TryPlaceAdjacentChunk(const FRoomChunk& NewChunk);
-
-	/** Check if chunk placement is valid (within bounds, no overlap) */
-	bool IsValidChunkPlacement(const FRoomChunk& Chunk) const;
-
-	/** Mark all cells within a chunk as floor */
-	void MarkChunkCells(const FRoomChunk& Chunk);
-
-	/** Get potential positions adjacent to placed chunks */
-	TArray<FIntPoint> GetAdjacentPositions() const;
+#pragma region Room Generation Interface
+	/** Generate floor meshes - uses base implementation (fills all ECT_FloorMesh cells) */
+	virtual bool GenerateFloor() override;
 	
-	/** Validate minimum room size */
-	bool ValidateMinimumSize();
+	/** Generate walls along irregular perimeter */
+	virtual bool GenerateWalls() override;
+	
+	/** Generate corners - may skip or use algorithmic detection */
+	virtual bool GenerateCorners() override;
+	
+	/** Generate doorways - uses base implementation */
+	virtual bool GenerateDoorways() override;
+	
+	/** Generate ceiling - uses base implementation (fills all ECT_FloorMesh cells) */
+	virtual bool GenerateCeiling() override;
+#pragma endregion
+
+#pragma region ChunkyRoom generation parameters
+	/** Minimum number of protrusions to add */
+	UPROPERTY(EditAnywhere, Category = "Chunky Generation", meta = (ClampMin = "0", ClampMax = "20"))
+	int32 MinProtrusions = 3;
+	
+	/** Maximum number of protrusions to add */
+	UPROPERTY(EditAnywhere, Category = "Chunky Generation", meta = (ClampMin = "0", ClampMax = "20"))
+	int32 MaxProtrusions = 8;
+	
+	/** Minimum size for protrusion width/height (cells) */
+	UPROPERTY(EditAnywhere, Category = "Chunky Generation", meta = (ClampMin = "2", ClampMax = "10"))
+	int32 MinProtrusionSize = 2;
+	
+	/** Maximum size for protrusion width/height (cells) */
+	UPROPERTY(EditAnywhere, Category = "Chunky Generation", meta = (ClampMin = "2", ClampMax = "20"))
+	int32 MaxProtrusionSize = 6;
+	
+	/** Percentage of grid used for base room (0.5 = 50%, 0.8 = 80%) */
+	UPROPERTY(EditAnywhere, Category = "Chunky Generation", meta = (ClampMin = "0.3", ClampMax = "0.95"))
+	float BaseRoomPercentage = 0.7f;
+	
+	/** Random seed for generation (-1 = random each time, 0+ = deterministic) */
+	UPROPERTY(EditAnywhere, Category = "Chunky Generation")
+	int32 RandomSeed = -1;
+#pragma endregion
+	
+#pragma region Internal Helpers
+	/** Random stream for deterministic generation */
+	FRandomStream RandomStream;
+	
+	/** Base room bounds (calculated during CreateGrid) */
+	FIntPoint BaseRoomStart;
+	FIntPoint BaseRoomSize;
+	
+	/** Mark a rectangular area as floor cells */
+	void MarkRectangle(int32 StartX, int32 StartY, int32 Width, int32 Height);
+	
+	/** Add a random protrusion extending from the base room */
+	void AddRandomProtrusion();
+	
+	/** Check if a cell has a floor neighbor in a specific direction */
+	bool HasFloorNeighbor(FIntPoint Cell, FIntPoint Direction) const;
+	
+	/** Get all perimeter cells (floor cells adjacent to empty cells) */
+	TArray<FIntPoint> GetPerimeterCells() const;
+#pragma endregion
+
+	
 };
