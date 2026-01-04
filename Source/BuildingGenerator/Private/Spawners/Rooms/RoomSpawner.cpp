@@ -36,33 +36,8 @@ ARoomSpawner::ARoomSpawner()
 }
 bool ARoomSpawner::EnsureGeneratorReady()
 {
-	// Validate RoomData
-	if (!RoomData) 
-	{ DebugHelpers->LogCritical(TEXT("RoomData is not assigned!")); return false;}
-
-	if (RoomGridSize. X < 4 || RoomGridSize.Y < 4)
-	{ DebugHelpers->LogCritical(TEXT("GridSize is too small (min 5x5)!")); return false;}
-	
-	// Create RoomGenerator if needed
-	if (!RoomGenerator)
-	{
-		DebugHelpers->LogVerbose(TEXT("Creating RoomGenerator..."));
-		RoomGenerator = NewObject<UUniformRoomGenerator>(this, TEXT("UniformRoomGenerator"));
-		if (!RoomGenerator)
-		{ DebugHelpers->LogCritical(TEXT("Failed to create RoomGenerator! ")); return false; }
-	}
-
-	// Initialize if needed
-	if (!RoomGenerator->IsInitialized())
-	{
-		DebugHelpers->LogVerbose(TEXT("Initializing RoomGenerator..."));
-		if (!RoomGenerator->Initialize(RoomData, RoomGridSize))
-		{ DebugHelpers->LogCritical(TEXT("Failed to initialize RoomGenerator!")); return false;}
-
-		DebugHelpers->LogVerbose(TEXT("Creating grid cells..."));
-		RoomGenerator->CreateGrid();
-	}
-	return true;
+	UE_LOG(LogTemp, Warning, TEXT("RoomSpawner::EnsureGeneratorReady() called on base class - child should override!"));
+	return false;
 }
 
 #if WITH_EDITOR
