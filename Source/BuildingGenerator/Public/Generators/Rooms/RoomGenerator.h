@@ -18,7 +18,7 @@ struct FGeneratorWallSegment;
 struct FPlacedCeilingInfo;
 
 /* RoomGenerator - Pure logic class for room generation Handles grid creation, mesh placement algorithms, and room data processing */
-UCLASS()
+UCLASS(Abstract)
 class BUILDINGGENERATOR_API URoomGenerator : public UObject
 {
 	GENERATED_BODY()
@@ -55,7 +55,7 @@ public:
 	TArray<EGridCellType> GridState;
 	
 	UFUNCTION(BlueprintCallable, Category = "Room Generator")
-	virtual void CreateGrid();
+	virtual void CreateGrid() PURE_VIRTUAL(URoomGenerator::CreateGrid, );
 	UFUNCTION(BlueprintCallable, Category = "Room Generator")
 	void ClearGrid();
 	UFUNCTION(BlueprintCallable, Category = "Room Generator")
@@ -82,7 +82,7 @@ public:
 	UFloorData* FloorData;
 	
 	/* Generate floor meshes using sequential weighted fill algorithm */
-	virtual bool GenerateFloor();
+	virtual bool GenerateFloor() PURE_VIRTUAL(URoomGenerator::GenerateFloor, return false;);
 
 	/* Get list of placed floor meshes */
 	const TArray<FPlacedMeshInfo>& GetPlacedFloorMeshes() const { return PlacedFloorMeshes; }
@@ -116,7 +116,7 @@ public:
 	UWallData* WallData;
 	
 	/* Generate walls for all four edges Uses greedy bin packing (largest modules first) */
-	virtual bool GenerateWalls();
+	virtual bool GenerateWalls() PURE_VIRTUAL(URoomGenerator::GenerateWalls, return false;);
 
 	/* Get list of placed walls */
 	const TArray<FPlacedWallInfo>& GetPlacedWalls() const { return PlacedWallMeshes; }
@@ -139,7 +139,8 @@ public:
 #pragma region Corner Generation
 
 	/* Generate corner pieces for all 4 corners */
-	virtual bool GenerateCorners();
+	virtual bool GenerateCorners() PURE_VIRTUAL(URoomGenerator::GenerateCorners, return false;);
+
 
 	/* Get list of placed corners */
 	const TArray<FPlacedCornerInfo>& GetPlacedCorners() const { return PlacedCornerMeshes; }
@@ -155,7 +156,7 @@ public:
 	UDoorData* DoorData;
 	
 	/* Generate doorways (manual + automatic standard doorway) */
-	virtual bool GenerateDoorways();
+	virtual bool GenerateDoorways() PURE_VIRTUAL(URoomGenerator::GenerateDoorways, return false;);
 
 	/* Mark doorway cells as occupied (called before wall generation) */
 	void MarkDoorwayCells();
@@ -178,7 +179,7 @@ public:
 	
 	/* Generate ceiling tile layout */
 	UFUNCTION(BlueprintCallable, Category = "Room Generation")
-	virtual bool GenerateCeiling();
+	virtual bool GenerateCeiling() PURE_VIRTUAL(URoomGenerator::GenerateCeiling, return false;);
 	
 	/* Get placed ceiling tiles (for spawner) */
 	UFUNCTION(BlueprintPure, Category = "Room Generation")

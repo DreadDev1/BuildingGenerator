@@ -34,18 +34,15 @@ bool URoomGenerator::Initialize(URoomData* InRoomData, FIntPoint InGridSize)
 }
 
 #pragma region Room Grid Management
-void URoomGenerator::CreateGrid()
-{
-	// Empty - child classes must implement
-	UE_LOG(LogTemp, Warning, TEXT("RoomGenerator::CreateGrid() called on base class - child should override!"));
-}
-
 void URoomGenerator:: ClearGrid()
 {
 	GridState.Empty();
-	PlacedFloorMeshes. Empty();
+	PlacedFloorMeshes.Empty();
 	PlacedWallMeshes.Empty();
 	PlacedBaseWallSegments.Empty();
+	PlacedDoorwayMeshes.Empty();
+	PlacedCornerMeshes.Empty();
+	PlacedCeilingTiles.Empty();
 
 	// Reset statistics
 	LargeTilesPlaced = 0;
@@ -126,12 +123,6 @@ bool URoomGenerator::ClearArea(FIntPoint StartCoord, FIntPoint Size)
 #pragma endregion
 
 #pragma region Floor Generation
-bool URoomGenerator::GenerateFloor()
-{
-	UE_LOG(LogTemp, Warning, TEXT("RoomGenerator::GenerateFloor() called on base class - child should override!"));
-	return false;
-}
-
 void URoomGenerator::ClearPlacedFloorMeshes()
 {
 	PlacedFloorMeshes.Empty();
@@ -422,12 +413,6 @@ void URoomGenerator::MarkForcedEmptyCells(const TArray<FIntPoint>& EmptyCells)
 #pragma endregion
 
 #pragma region Wall Generation
-bool URoomGenerator::GenerateWalls()
-{
-	UE_LOG(LogTemp, Warning, TEXT("RoomGenerator::GenerateWalls() called on base class - child should override!"));
-	return false;
-}
-
 int32 URoomGenerator::ExecuteForcedWallPlacements()
 {
 	if (!bIsInitialized || !RoomData)
@@ -674,12 +659,6 @@ void URoomGenerator::SpawnTopWallLayer()
 #pragma endregion
 
 #pragma region Corner Generation
-bool URoomGenerator::GenerateCorners()
-{
-	UE_LOG(LogTemp, Warning, TEXT("RoomGenerator::GenerateCorners() called on base class - child should override!"));
-	return false;
-}
-
 void URoomGenerator::ClearPlacedCorners()
 {
 	PlacedCornerMeshes.Empty();
@@ -687,13 +666,6 @@ void URoomGenerator::ClearPlacedCorners()
 #pragma endregion
 
 #pragma region Doorway Generation
-
-bool URoomGenerator::GenerateDoorways()
-{
-	UE_LOG(LogTemp, Warning, TEXT("RoomGenerator::GenerateDoorways() called on base class - child should override!"));
-	return false;
-}
-
 FPlacedDoorwayInfo URoomGenerator::CalculateDoorwayTransforms(const FDoorwayLayoutInfo& Layout)
 {
     FPlacedDoorwayInfo PlacedDoor;
@@ -816,11 +788,6 @@ void URoomGenerator::ClearPlacedDoorways()
 #pragma endregion
 
 #pragma region Ceiling Generation
-bool URoomGenerator::GenerateCeiling()
-{
-	UE_LOG(LogTemp, Warning, TEXT("RoomGenerator::GenerateCeiling() called on base class - child should override!"));
-	return false;
-}
 
 int32 URoomGenerator::ExecuteForcedCeilingPlacements(TArray<bool>& CeilingOccupied)
 {
