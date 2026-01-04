@@ -25,19 +25,19 @@ void UUniformRoomGenerator::CreateGrid()
 bool UUniformRoomGenerator::GenerateFloor()
 {
 if (!bIsInitialized)
-	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateFloor - Generator not initialized!")); return false; }
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateFloor - Generator not initialized!")); return false; }
 
 	if (! RoomData || !RoomData->FloorStyleData)
-	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator:: GenerateFloor - FloorData not assigned!")); return false; }
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator:: GenerateFloor - FloorData not assigned!")); return false; }
 
 	// Load FloorData and keep strong reference throughout function
 	UFloorData* FloorStyleData = RoomData->FloorStyleData.LoadSynchronous();
 	if (!FloorStyleData)
-	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateFloor - Failed to load FloorStyleData!")); return false; }
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateFloor - Failed to load FloorStyleData!")); return false; }
 
 	// Validate FloorTilePool exists
 	if (FloorStyleData->FloorTilePool. Num() == 0)
-	{ UE_LOG(LogTemp, Warning, TEXT("URoomGenerator::GenerateFloor - No floor meshes defined in FloorTilePool!")); return false;}
+	{ UE_LOG(LogTemp, Warning, TEXT("UUniformRoomGenerator::GenerateFloor - No floor meshes defined in FloorTilePool!")); return false;}
 	
 	// Clear previous placement data
 	ClearPlacedFloorMeshes();
@@ -47,7 +47,7 @@ if (!bIsInitialized)
 	int32 FloorSmallTilesPlaced = 0;
 	int32 FloorFillerTilesPlaced = 0;
 
-	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateFloor - Starting floor generation"));
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateFloor - Starting floor generation"));
 
  
 	// PHASE 0:  FORCED EMPTY REGIONS (Mark cells as reserved)
@@ -86,7 +86,7 @@ if (!bIsInitialized)
  
 	// FINAL STATISTICS
 	int32 RemainingEmpty = GetCellCountByType(EGridCellType::ECT_Empty);
-	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateFloor - Floor generation complete"));
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateFloor - Floor generation complete"));
 	UE_LOG(LogTemp, Log, TEXT("  Total meshes placed: %d"), PlacedFloorMeshes.Num());
 	UE_LOG(LogTemp, Log, TEXT("  Large:  %d, Medium: %d, Small: %d, Filler: %d"), 
 		FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
@@ -98,20 +98,20 @@ if (!bIsInitialized)
 bool UUniformRoomGenerator::GenerateWalls()
 {
 	if (!bIsInitialized)
-	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateWalls - Generator not initialized! ")); return false; }
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateWalls - Generator not initialized! ")); return false; }
 
 	if (!RoomData || RoomData->WallStyleData.IsNull())
-	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateWalls - WallStyleData not assigned!")); return false; }
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateWalls - WallStyleData not assigned!")); return false; }
 
 	WallData = RoomData->WallStyleData.LoadSynchronous();
 	if (!WallData || WallData->AvailableWallModules.Num() == 0)
-	{ UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateWalls - No wall modules defined!"));	return false; }
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateWalls - No wall modules defined!"));	return false; }
 	
 	// Clear previous data
 	ClearPlacedWalls();
 	PlacedBaseWallSegments.Empty();  // ✅ Clear tracking array
 
-	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateWalls - Starting wall generation"));
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateWalls - Starting wall generation"));
 
 	// PHASE 0:   GENERATE DOORWAYS FIRST (Before any walls are placed!)
 	UE_LOG(LogTemp, Log, TEXT("  Phase 0: Generating doorways"));
@@ -130,7 +130,7 @@ bool UUniformRoomGenerator::GenerateWalls()
 	FillWallEdge(EWallEdge::East);
 	FillWallEdge(EWallEdge::West);
 
-	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateWalls - Base walls tracked:  %d segments"), PlacedBaseWallSegments.Num());
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateWalls - Base walls tracked:  %d segments"), PlacedBaseWallSegments.Num());
 
 	// PASS 3: Spawn middle layers using socket-based stacking
 	SpawnMiddleWallLayers();
@@ -138,7 +138,7 @@ bool UUniformRoomGenerator::GenerateWalls()
 	// PASS 4: Spawn top layer using socket-based stacking
 	SpawnTopWallLayer();
 
-	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateWalls - Complete.  Total wall records: %d"), PlacedWallMeshes.Num());
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateWalls - Complete.  Total wall records: %d"), PlacedWallMeshes.Num());
 
 	return true;
 }
@@ -146,30 +146,30 @@ bool UUniformRoomGenerator::GenerateWalls()
 bool UUniformRoomGenerator::GenerateCorners()
 {
  if (!bIsInitialized)
-    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator:: GenerateCorners - Generator not initialized! ")); return false; }
+    { UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator:: GenerateCorners - Generator not initialized! ")); return false; }
 
     if (! RoomData || RoomData->WallStyleData. IsNull())
-    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator:: GenerateCorners - WallStyleData not assigned!")); return false; }
+    { UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator:: GenerateCorners - WallStyleData not assigned!")); return false; }
 
     WallData = RoomData->WallStyleData.LoadSynchronous();
     if (!WallData)
-    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateCorners - Failed to load WallStyleData!")); return false; }
+    { UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateCorners - Failed to load WallStyleData!")); return false; }
 
     // Clear previous corners
     ClearPlacedCorners();
 
-    UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateCorners - Starting corner generation"));
+    UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateCorners - Starting corner generation"));
 
     // Load corner mesh (required)
     if (WallData->DefaultCornerMesh.IsNull())
     {
-        UE_LOG(LogTemp, Warning, TEXT("URoomGenerator::GenerateCorners - No default corner mesh defined, skipping corners"));
+        UE_LOG(LogTemp, Warning, TEXT("UUniformRoomGenerator::GenerateCorners - No default corner mesh defined, skipping corners"));
         return true; 
     }
 
     UStaticMesh* CornerMesh = WallData->DefaultCornerMesh.LoadSynchronous();
     if (!CornerMesh)
-    { UE_LOG(LogTemp, Warning, TEXT("URoomGenerator::GenerateCorners - Failed to load corner mesh")); return false;		}
+    { UE_LOG(LogTemp, Warning, TEXT("UUniformRoomGenerator::GenerateCorners - Failed to load corner mesh")); return false;		}
 
      
     // Define corner data (matching MasterRoom's clockwise order:  SW, SE, NE, NW)
@@ -234,7 +234,7 @@ bool UUniformRoomGenerator::GenerateCorners()
         *CornerData.Name,  *FinalPosition.ToString(), CornerData. Rotation.Roll, CornerData.Rotation. Pitch, CornerData.Rotation.Yaw);
     }
 
-    UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateCorners - Complete.  Placed %d corners"), PlacedCornerMeshes.Num());
+    UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateCorners - Complete.  Placed %d corners"), PlacedCornerMeshes.Num());
 
     return true;
 }
@@ -242,15 +242,15 @@ bool UUniformRoomGenerator::GenerateCorners()
 bool UUniformRoomGenerator::GenerateDoorways()
 {
  if (!bIsInitialized)
-    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateDoorways - Generator not initialized!  ")); return false; }
+    { UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateDoorways - Generator not initialized!  ")); return false; }
 
     if (!RoomData)
-    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateDoorways - RoomData is null! ")); return false; }
+    { UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateDoorways - RoomData is null! ")); return false; }
      
     // CHECK FOR CACHED LAYOUT
 	if (CachedDoorwayLayouts.Num() > 0)
     {
-        UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Using cached layout (%d doorways), recalculating transforms"),
+        UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateDoorways - Using cached layout (%d doorways), recalculating transforms"),
             CachedDoorwayLayouts.Num());
         
         // Clear old transforms but keep layout
@@ -265,12 +265,12 @@ bool UUniformRoomGenerator::GenerateDoorways()
         
         MarkDoorwayCells();
         
-        UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Transforms recalculated with current offsets"));
+        UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateDoorways - Transforms recalculated with current offsets"));
         return true;
     }
 	
     // NO CACHE - GENERATE NEW LAYOUT
-	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Generating new doorway layout"));
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateDoorways - Generating new doorway layout"));
 
     // Clear both layout and transforms
     PlacedDoorwayMeshes.Empty();
@@ -414,7 +414,7 @@ bool UUniformRoomGenerator::GenerateDoorways()
 	// PHASE 3: Mark Doorway Cells
 	MarkDoorwayCells();
 
-    UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Complete.   Cached %d layouts, placed %d doorways"),
+    UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateDoorways - Complete.   Cached %d layouts, placed %d doorways"),
         CachedDoorwayLayouts.Num(), PlacedDoorwayMeshes.Num());
 
     return true;
@@ -422,6 +422,148 @@ bool UUniformRoomGenerator::GenerateDoorways()
 
 bool UUniformRoomGenerator::GenerateCeiling()
 {
-	// Will implement in Step 7
-	return false;
+	 if (! bIsInitialized)
+    { UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateCeiling - Generator not initialized!  ")); return false; }
+
+    if (! RoomData || RoomData->CeilingStyleData.IsNull())
+    { UE_LOG(LogTemp, Warning, TEXT("UUniformRoomGenerator::GenerateCeiling - No CeilingStyleData assigned")); return false; }
+
+    CeilingData = RoomData->CeilingStyleData.LoadSynchronous();
+    if (!CeilingData)
+    { UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateCeiling - Failed to load CeilingStyleData")); return false; }
+
+	if (CeilingData->CeilingTilePool.Num() == 0)
+	{ UE_LOG(LogTemp, Warning, TEXT("UUniformRoomGenerator::GenerateCeiling - No tiles in CeilingTilePool! ")); return false; }
+	
+    // Clear previous ceiling data
+    ClearPlacedCeiling();
+
+    UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateCeiling - Starting ceiling generation"));
+
+    // Create occupancy grid
+    TArray<bool> CeilingOccupied;
+    CeilingOccupied.Init(false, GridSize.X * GridSize.Y);
+
+    FRandomStream Stream(FMath::  Rand());
+
+    int32 CeilingLargeTilesPlaced = 0;
+    int32 CeilingMediumTilesPlaced = 0;
+    int32 CeilingSmallTilesPlaced = 0;
+	int32 CeilingFillerTilesPlaced = 0; 
+     
+    // HELPER LAMBDAS
+     
+
+    auto IsCellOccupied = [&](int32 X, int32 Y) -> bool
+    {
+        if (X < 0 || X >= GridSize.X || Y < 0 || Y >= GridSize.Y) return true;
+        return CeilingOccupied[Y * GridSize.X + X];
+    };
+
+    auto MarkCellsOccupied = [&](int32 StartX, int32 StartY, FIntPoint Size)
+    {
+        for (int32 dy = 0; dy < Size.Y; dy++)
+        {
+            for (int32 dx = 0; dx < Size.X; dx++)
+            {
+                int32 X = StartX + dx;
+                int32 Y = StartY + dy;
+                if (X >= 0 && X < GridSize.X && Y >= 0 && Y < GridSize.Y)
+                {
+                    CeilingOccupied[Y * GridSize.X + X] = true;
+                }
+            }
+        }
+    };
+
+    auto IsAreaAvailable = [&](int32 StartX, int32 StartY, FIntPoint Size) -> bool
+    {
+        for (int32 dy = 0; dy < Size.Y; dy++)
+        {
+            for (int32 dx = 0; dx < Size.X; dx++)
+            {
+                if (IsCellOccupied(StartX + dx, StartY + dy))
+                    return false;
+            }
+        }
+        return true;
+    };
+
+	// PHASE 0:  FORCED PLACEMENTS (Designer overrides - highest priority)
+	int32 ForcedCount = ExecuteForcedCeilingPlacements(CeilingOccupied);
+	if (ForcedCount > 0)
+	{ UE_LOG(LogTemp, Log, TEXT("  Phase 0: Placed %d forced ceiling tiles"), ForcedCount); }
+	
+    // PASS 1:  LARGE TILES (4x4)
+	// Large tiles (400x400, 200x400, 400x200)
+	FillCeilingWithTileSize(CeilingData->CeilingTilePool, CeilingOccupied, FIntPoint(4, 4), CeilingData->CeilingRotation, CeilingData->CeilingHeight, CeilingLargeTilesPlaced);
+	FillCeilingWithTileSize(CeilingData->CeilingTilePool, CeilingOccupied, FIntPoint(2, 4), CeilingData->CeilingRotation, CeilingData->CeilingHeight, CeilingLargeTilesPlaced);
+	FillCeilingWithTileSize(CeilingData->CeilingTilePool, CeilingOccupied, FIntPoint(4, 2), CeilingData->CeilingRotation, CeilingData->CeilingHeight, CeilingLargeTilesPlaced);
+
+	// Medium tiles (200x200)
+	FillCeilingWithTileSize(CeilingData->CeilingTilePool, CeilingOccupied, FIntPoint(2, 2), CeilingData->CeilingRotation, CeilingData->CeilingHeight, CeilingMediumTilesPlaced);
+
+	// Small tiles (100x200, 200x100, 100x100)
+	FillCeilingWithTileSize(CeilingData->CeilingTilePool, CeilingOccupied, FIntPoint(1, 2), CeilingData->CeilingRotation, CeilingData->CeilingHeight, CeilingSmallTilesPlaced);
+	FillCeilingWithTileSize(CeilingData->CeilingTilePool, CeilingOccupied, FIntPoint(2, 1), CeilingData->CeilingRotation, CeilingData->CeilingHeight, CeilingSmallTilesPlaced);
+	FillCeilingWithTileSize(CeilingData->CeilingTilePool, CeilingOccupied, FIntPoint(1, 1), CeilingData->CeilingRotation, CeilingData->CeilingHeight, CeilingSmallTilesPlaced);
+
+
+     
+    // PASS 2:  MEDIUM TILES (2x2)
+	int32 GapFillCount = FillRemainingCeilingGaps(CeilingData->CeilingTilePool, CeilingOccupied, CeilingData->CeilingRotation, CeilingData->CeilingHeight,
+	  CeilingLargeTilesPlaced, CeilingMediumTilesPlaced, CeilingSmallTilesPlaced, CeilingFillerTilesPlaced);
+	UE_LOG(LogTemp, Log, TEXT("  Phase 2: Filled %d remaining gaps"), GapFillCount);
+     
+    // PASS 3:  SMALL TILES (1x1)
+	if (CeilingData->CeilingTilePool.Num() > 0)
+    {
+        for (int32 Y = 0; Y < GridSize.Y; Y++)
+        {
+            for (int32 X = 0; X < GridSize.X; X++)
+            {
+                if (!  IsCellOccupied(X, Y))
+                {
+                	FMeshPlacementInfo SelectedTile = SelectWeightedMesh(CeilingData->CeilingTilePool);
+
+                    if (SelectedTile.MeshAsset.IsNull())
+                    {
+                        // ✅ CHANGED:   Use GridFootprint from tile
+                        FIntPoint TileFootprint = SelectedTile.GridFootprint;
+                        
+                        FVector TilePosition = FVector(
+                            (X + TileFootprint.X / 2.0f) * CellSize,
+                            (Y + TileFootprint.Y / 2.0f) * CellSize,
+                            CeilingData->CeilingHeight
+                        );
+
+                    	// Create rotation (base ceiling rotation + tile rotation)
+                    	FRotator FinalRotation = CeilingData->CeilingRotation;
+
+                    	// Normalize quaternion to avoid floating point errors
+                    	FQuat NormalizedRotation = FinalRotation.Quaternion();
+                    	NormalizedRotation.Normalize();
+
+                    	// Create transform
+                    	FTransform TileTransform(NormalizedRotation, TilePosition, FVector(1.0f));
+
+                        FPlacedCeilingInfo PlacedTile;
+                        PlacedTile. GridCoordinate = FIntPoint(X, Y);
+                        PlacedTile.TileSize = TileFootprint;
+                        PlacedTile.MeshInfo = SelectedTile;
+                         PlacedTile.LocalTransform = TileTransform;
+
+                        PlacedCeilingTiles.Add(PlacedTile);
+                        MarkCellsOccupied(X, Y, TileFootprint);
+                        CeilingSmallTilesPlaced++;
+                    }
+                }
+            }
+        }
+    }
+
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateCeiling - Complete:  %d large, %d medium, %d small, %d filler = %d total"),
+		CeilingLargeTilesPlaced, CeilingMediumTilesPlaced, CeilingSmallTilesPlaced, CeilingFillerTilesPlaced, PlacedCeilingTiles. Num());
+
+	return true;
 }

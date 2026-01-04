@@ -7,6 +7,7 @@
 #include "Data/Room/FloorData.h"
 #include "Data/Room/WallData.h"
 #include "Data/Room/DoorData.h"
+#include "Data/Room/CeilingData.h"
 #include "Data/Room/RoomData.h"
 #include "RoomGenerator.generated.h"
 
@@ -171,6 +172,10 @@ public:
 #pragma endregion
 	
 #pragma region Ceiling Generation
+	
+	UPROPERTY(EditAnywhere)
+	UCeilingData* CeilingData;
+	
 	/* Generate ceiling tile layout */
 	UFUNCTION(BlueprintCallable, Category = "Room Generation")
 	virtual bool GenerateCeiling();
