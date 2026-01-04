@@ -2,74 +2,140 @@
 
 #include "Generators/Rooms/ChunkyRoomGenerator.h"
 
-
-
-
-
 void UChunkyRoomGenerator::CreateGrid()
 {
-	if (!bIsInitialized)
-	{
-		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::CreateGrid - Generator not initialized!"));
-		return;
-	}
+	   if (!bIsInitialized)
+    {
+        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::CreateGrid - Generator not initialized!"));
+        return;
+    }
 
-	// Initialize random stream
-	if (RandomSeed == -1)
-	{
-		RandomStream.Initialize(FMath::Rand());
-	}
-	else
-	{
-		RandomStream.Initialize(RandomSeed);
-	}
+    // SET TARGET CELL TYPE FOR FLOOR GENERATION
+    FloorTargetCellType = EGridCellType::ECT_Custom;
 
-	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Creating chunky room..."));
+    // Initialize random stream
+    if (RandomSeed == -1)
+    {
+        RandomStream.Initialize(FMath::Rand());
+    }
+    else
+    {
+        RandomStream.Initialize(RandomSeed);
+    }
 
-	// Step 1: Initialize grid (all cells empty)
-	int32 TotalCells = GridSize.X * GridSize.Y;
-	GridState.SetNum(TotalCells);
-	for (EGridCellType& Cell : GridState)
-	{
-		Cell = EGridCellType::ECT_Empty;
-	}
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Creating chunky room..."));
 
-	// Step 2: Calculate base room bounds (centered in grid)
-	BaseRoomSize.X = FMath::Max(4, (int32)(GridSize.X * BaseRoomPercentage));
-	BaseRoomSize.Y = FMath::Max(4, (int32)(GridSize.Y * BaseRoomPercentage));
-	BaseRoomStart.X = 0;
-	BaseRoomStart.Y = 0;
+    // Step 1: Initialize grid (all cells VOID - outside room)
+    int32 TotalCells = GridSize.X * GridSize.Y;
+    GridState.SetNum(TotalCells);
+    for (EGridCellType& Cell : GridState)
+    {
+        Cell = EGridCellType::ECT_Void;  // CHANGED: Outside room
+    }
 
-	UE_LOG(LogTemp, Verbose, TEXT("  Base room: Start(%d, %d), Size(%d, %d)"),
-		BaseRoomStart.X, BaseRoomStart.Y, BaseRoomSize.X, BaseRoomSize.Y);
+    // Step 2: Calculate base room bounds (starting at 0,0)
+    BaseRoomSize.X = FMath::Max(4, (int32)(GridSize.X * BaseRoomPercentage));
+    BaseRoomSize.Y = FMath::Max(4, (int32)(GridSize.Y * BaseRoomPercentage));
+    BaseRoomStart.X = 0;
+    BaseRoomStart.Y = 0;
 
-	// Step 3: Mark base room cells as floor
-	MarkRectangle(BaseRoomStart.X, BaseRoomStart.Y, BaseRoomSize.X, BaseRoomSize.Y);
+    UE_LOG(LogTemp, Verbose, TEXT("  Base room: Start(%d, %d), Size(%d, %d)"),
+        BaseRoomStart.X, BaseRoomStart.Y, BaseRoomSize.X, BaseRoomSize.Y);
 
-	// Step 4: Add random protrusions
-	int32 NumProtrusions = RandomStream.RandRange(MinProtrusions, MaxProtrusions);
-	UE_LOG(LogTemp, Verbose, TEXT("  Adding %d protrusions..."), NumProtrusions);
+    // Step 3: Mark base room cells as CUSTOM (part of room, needs floor)
+    MarkRectangle(BaseRoomStart.X, BaseRoomStart.Y, BaseRoomSize.X, BaseRoomSize.Y);
 
-	for (int32 i = 0; i < NumProtrusions; ++i)
-	{
-		AddRandomProtrusion();
-	}
+    // Step 4: Add random protrusions
+    int32 NumProtrusions = RandomStream.RandRange(MinProtrusions, MaxProtrusions);
+    UE_LOG(LogTemp, Verbose, TEXT("  Adding %d protrusions..."), NumProtrusions);
 
-	// Step 5: Log statistics
-	int32 FloorCells = GetCellCountByType(EGridCellType::ECT_FloorMesh);
-	int32 EmptyCells = GetCellCountByType(EGridCellType::ECT_Empty);
-	float Occupancy = GetOccupancyPercentage();
+    for (int32 i = 0; i < NumProtrusions; ++i)
+    {
+        AddRandomProtrusion();
+    }
 
-	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Complete"));
-	UE_LOG(LogTemp, Log, TEXT("  Grid: %d x %d (%d cells)"), GridSize.X, GridSize.Y, TotalCells);
-	UE_LOG(LogTemp, Log, TEXT("  Floor: %d cells (%.1f%%)"), FloorCells, Occupancy);
-	UE_LOG(LogTemp, Log, TEXT("  Empty: %d cells"), EmptyCells);
-	UE_LOG(LogTemp, Log, TEXT("  Protrusions: %d"), NumProtrusions);
+    // Step 5: Log statistics
+    int32 CustomCells = GetCellCountByType(EGridCellType::ECT_Custom);
+    int32 VoidCells = GetCellCountByType(EGridCellType::ECT_Void);
+
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Complete"));
+    UE_LOG(LogTemp, Log, TEXT("  Grid: %d x %d (%d cells)"), GridSize.X, GridSize.Y, TotalCells);
+    UE_LOG(LogTemp, Log, TEXT("  Custom (room area): %d cells"), CustomCells);
+    UE_LOG(LogTemp, Log, TEXT("  Void (outside): %d cells"), VoidCells);
+    UE_LOG(LogTemp, Log, TEXT("  Protrusions: %d"), NumProtrusions);
 }
 
 bool UChunkyRoomGenerator::GenerateFloor()
 {
-	return false;
+if (!bIsInitialized)
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateFloor - Generator not initialized!")); return false; }
+
+	if (! RoomData || !RoomData->FloorStyleData)
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator:: GenerateFloor - FloorData not assigned!")); return false; }
+
+	// Load FloorData and keep strong reference throughout function
+	UFloorData* FloorStyleData = RoomData->FloorStyleData.LoadSynchronous();
+	if (!FloorStyleData)
+	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateFloor - Failed to load FloorStyleData!")); return false; }
+
+	// Validate FloorTilePool exists
+	if (FloorStyleData->FloorTilePool. Num() == 0)
+	{ UE_LOG(LogTemp, Warning, TEXT("UUniformRoomGenerator::GenerateFloor - No floor meshes defined in FloorTilePool!")); return false;}
+	
+	// Clear previous placement data
+	ClearPlacedFloorMeshes();
+	
+	int32 FloorLargeTilesPlaced = 0;
+	int32 FloorMediumTilesPlaced = 0;
+	int32 FloorSmallTilesPlaced = 0;
+	int32 FloorFillerTilesPlaced = 0;
+
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateFloor - Starting floor generation"));
+
+ 
+	// PHASE 0:  FORCED EMPTY REGIONS (Mark cells as reserved)
+ 	TArray<FIntPoint> ForcedEmptyCells = ExpandForcedEmptyRegions();
+	if (ForcedEmptyCells.Num() > 0)
+	{
+		MarkForcedEmptyCells(ForcedEmptyCells);
+		UE_LOG(LogTemp, Log, TEXT("  Phase 0: Marked %d forced empty cells"), ForcedEmptyCells. Num());
+	}
+	
+	// PHASE 1: FORCED PLACEMENTS (Designer overrides - highest priority)
+ 	int32 ForcedCount = ExecuteForcedPlacements();
+	UE_LOG(LogTemp, Log, TEXT("  Phase 1: Placed %d forced meshes"), ForcedCount);
+	
+	// PHASE 2: GREEDY FILL (Large → Medium → Small)
+ 	// Use the FloorData pointer we loaded at the top (safer than re-accessing)
+	const TArray<FMeshPlacementInfo>& FloorMeshes = FloorStyleData->FloorTilePool;
+	UE_LOG(LogTemp, Log, TEXT("  Phase 2: Greedy fill with %d tile options"), FloorMeshes.Num());
+
+	// Large tiles (400x400, 200x400, 400x200)
+	FillWithTileSize(FloorMeshes, FIntPoint(4, 4), FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+	FillWithTileSize(FloorMeshes, FIntPoint(2, 4), FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+	FillWithTileSize(FloorMeshes, FIntPoint(4, 2), FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+
+	// Medium tiles (200x200)
+	FillWithTileSize(FloorMeshes, FIntPoint(2, 2), FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+
+	// Small tiles (100x200, 200x100, 100x100)
+	FillWithTileSize(FloorMeshes, FIntPoint(1, 2), FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+	FillWithTileSize(FloorMeshes, FIntPoint(2, 1), FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+	FillWithTileSize(FloorMeshes, FIntPoint(1, 1), FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+	
+	// PHASE 3: GAP FILL (Fill remaining empty cells with any available mesh)
+	int32 GapFillCount = FillRemainingGaps(FloorMeshes, FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+	UE_LOG(LogTemp, Log, TEXT("  Phase 3:  Filled %d remaining gaps"), GapFillCount);
+ 
+	// FINAL STATISTICS
+	int32 RemainingEmpty = GetCellCountByType(EGridCellType::ECT_Empty);
+	UE_LOG(LogTemp, Log, TEXT("UUniformRoomGenerator::GenerateFloor - Floor generation complete"));
+	UE_LOG(LogTemp, Log, TEXT("  Total meshes placed: %d"), PlacedFloorMeshes.Num());
+	UE_LOG(LogTemp, Log, TEXT("  Large:  %d, Medium: %d, Small: %d, Filler: %d"), 
+		FloorLargeTilesPlaced, FloorMediumTilesPlaced, FloorSmallTilesPlaced, FloorFillerTilesPlaced);
+	UE_LOG(LogTemp, Log, TEXT("  Remaining empty cells: %d"), RemainingEmpty);
+
+	return true;
 }
 
 bool UChunkyRoomGenerator::GenerateWalls()
@@ -105,7 +171,7 @@ void UChunkyRoomGenerator::MarkRectangle(int32 StartX, int32 StartY, int32 Width
 			// Bounds check
 			if (IsValidGridCoordinate(Cell))
 			{
-				SetCellState(Cell, EGridCellType::ECT_FloorMesh);
+				SetCellState(Cell, EGridCellType::ECT_Custom);
 			}
 		}
 	}

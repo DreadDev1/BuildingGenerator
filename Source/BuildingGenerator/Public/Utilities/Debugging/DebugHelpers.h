@@ -7,6 +7,7 @@
 #include "Data/Grid/GridData.h"
 #include "DebugHelpers.generated.h"
 
+struct FForcedEmptyRegion;
 // Log verbosity levels
 UENUM(BlueprintType)
 enum class EDebugLogLevel : uint8
@@ -78,19 +79,27 @@ public:
 	float GridLineLifetime = -1.0f;
 
 	// Empty cell color (blue in MasterRoom)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug Settings|Colors")
+	UPROPERTY(BlueprintReadWrite, Category = "Debug Settings|Colors")
 	FColor EmptyCellColor = FColor::Blue;
 
 	// Occupied cell color (red in MasterRoom)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug Settings|Colors")
+	UPROPERTY(BlueprintReadWrite, Category = "Debug Settings|Colors")
 	FColor OccupiedCellColor = FColor::Red;
+	
+	// Custom cell color (red in MasterRoom)
+	UPROPERTY(BlueprintReadWrite, Category = "Debug Settings|Colors")
+	FColor CustomCellColor = FColor::Yellow;
 
+	// Custom cell color (red in MasterRoom)
+	UPROPERTY(BlueprintReadWrite, Category = "Debug Settings|Colors")
+	FColor VoidCellColor = FColor(0, 150, 150);
+	
 	// Forced empty region color (cyan in MasterRoom)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug Settings|Colors")
+	UPROPERTY(BlueprintReadWrite, Category = "Debug Settings|Colors")
 	FColor ForcedEmptyRegionColor = FColor:: Cyan;
 
 	// Forced empty cell border color (orange in MasterRoom)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug Settings|Colors")
+	UPROPERTY(BlueprintReadWrite, Category = "Debug Settings|Colors")
 	FColor ForcedEmptyCellBorderColor = FColor::Orange;
 
 	// Cell box Z-offset (height above ground)
@@ -103,11 +112,11 @@ public:
 	
 	// Wall boundary cell color (for Phase 3 - wall generation)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug Settings|Colors")
-	FColor WallCellColor = FColor::Orange;
+	FColor WallCellColor = FColor::Black;
 
 	// Doorway cell color (for Phase 4 - door placement)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug Settings|Colors")
-	FColor DoorCellColor = FColor:: Cyan;
+	FColor DoorCellColor = FColor:: Green;
 
 	// Forced placement mesh color (for designer overrides)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug Settings|Colors")

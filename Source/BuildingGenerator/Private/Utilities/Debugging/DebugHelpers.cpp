@@ -3,6 +3,7 @@
 #include "Utilities/Debugging/DebugHelpers.h"
 #include "DrawDebugHelpers.h"
 #include "Components/TextRenderComponent.h"
+#include "Data/Generation/RoomGenerationTypes.h"
 #include "Engine/Engine.h"
 
 UDebugHelpers::UDebugHelpers()
@@ -209,16 +210,16 @@ FColor UDebugHelpers:: GetColorForCellType(EGridCellType CellType) const
 	{
 	case EGridCellType::ECT_Empty:
 		return EmptyCellColor;  // Blue
-
 	case EGridCellType:: ECT_FloorMesh:
 		return OccupiedCellColor;  // Red
-
 	case EGridCellType::ECT_WallMesh:
-		return FColor::Purple;  // Wall boundaries
-
+		return FColor::Purple;  
 	case EGridCellType::ECT_Doorway:
-		return FColor:: Yellow;  // Doorway slots
-
+		return FColor:: Yellow;  
+	case EGridCellType::ECT_Custom:
+		return CustomCellColor;       
+	case EGridCellType::ECT_Void:
+		return VoidCellColor;
 	default:
 		return FColor::White;
 	}

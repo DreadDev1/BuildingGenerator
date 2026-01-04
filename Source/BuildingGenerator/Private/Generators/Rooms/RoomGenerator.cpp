@@ -97,7 +97,7 @@ bool URoomGenerator::IsValidGridCoordinate(FIntPoint GridCoord) const
 bool URoomGenerator::IsAreaAvailable(FIntPoint StartCoord, FIntPoint Size) const
 {
 	// Delegate to static helper
-	return URoomGenerationHelpers::IsAreaAvailable(GridState, GridSize, StartCoord, Size, EGridCellType::ECT_Empty);
+	return URoomGenerationHelpers::IsAreaAvailable(GridState, GridSize, StartCoord, Size, FloorTargetCellType);
 }
 
 bool URoomGenerator::MarkArea(FIntPoint StartCoord, FIntPoint Size, EGridCellType CellType)

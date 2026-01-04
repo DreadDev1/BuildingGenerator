@@ -15,8 +15,12 @@ enum class EGridCellType : uint8
 {
 	ECT_Empty 		UMETA(DisplayName = "Empty"),
 	ECT_FloorMesh 	UMETA(DisplayName = "Floor Mesh"),
-	ECT_WallMesh 		UMETA(DisplayName = "Wall Boundary"),
-	ECT_Doorway 	UMETA(DisplayName = "Doorway Slot")
+	ECT_WallMesh 	UMETA(DisplayName = "Wall Boundary"),
+	ECT_Doorway 	UMETA(DisplayName = "Doorway Cell"),
+	
+	ECT_Reserved    UMETA(DisplayName = "Reserved Cell"),
+	ECT_Custom      UMETA(DisplayName = "Custom Cell"),
+	ECT_Void        UMETA(DisplayName = "Void Cell"),
 };
 
 

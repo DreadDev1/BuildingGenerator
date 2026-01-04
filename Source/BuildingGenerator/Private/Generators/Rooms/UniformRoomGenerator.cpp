@@ -15,7 +15,7 @@ void UUniformRoomGenerator::CreateGrid()
     
 	// Initialize grid state array (all floor cells for uniform room)
 	GridState.SetNum(GridSize.X * GridSize.Y);
-	for (EGridCellType& Cell : GridState) { Cell = EGridCellType::ECT_FloorMesh; }
+	for (EGridCellType& Cell : GridState) { Cell = EGridCellType::ECT_Empty; }
     
 	// Log statistics
 	int32 TotalCells = GetTotalCellCount();
@@ -26,7 +26,7 @@ void UUniformRoomGenerator::CreateGrid()
 #pragma region Floor Generation
 bool UUniformRoomGenerator::GenerateFloor()
 {
-if (!bIsInitialized)
+	if (!bIsInitialized)
 	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateFloor - Generator not initialized!")); return false; }
 
 	if (! RoomData || !RoomData->FloorStyleData)

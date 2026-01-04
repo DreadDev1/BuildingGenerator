@@ -26,7 +26,12 @@ class BUILDINGGENERATOR_API URoomGenerator : public UObject
 public:
 	// Initialization flag
 	bool bIsInitialized;
+
+protected:
+	/** Target cell type for floor placement (ECT_Empty for uniform, ECT_Custom for chunky/shaped) */
+	EGridCellType FloorTargetCellType = EGridCellType::ECT_Empty;
 	
+public:
 #pragma region Initialization
 	/* Initialize the room generator with room data */
 	bool Initialize(URoomData* InRoomData, FIntPoint InGridSize);
