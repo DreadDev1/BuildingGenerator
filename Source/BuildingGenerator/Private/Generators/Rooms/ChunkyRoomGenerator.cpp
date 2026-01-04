@@ -5,23 +5,14 @@
 void UChunkyRoomGenerator::CreateGrid()
 {
 	   if (!bIsInitialized)
-    {
-        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::CreateGrid - Generator not initialized!"));
-        return;
-    }
+    { UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::CreateGrid - Generator not initialized!")); return; }
 
     // SET TARGET CELL TYPE FOR FLOOR GENERATION
     FloorTargetCellType = EGridCellType::ECT_Custom;
 
     // Initialize random stream
-    if (RandomSeed == -1)
-    {
-        RandomStream.Initialize(FMath::Rand());
-    }
-    else
-    {
-        RandomStream.Initialize(RandomSeed);
-    }
+    if (RandomSeed == -1) { RandomStream.Initialize(FMath::Rand()); }
+    else{ RandomStream.Initialize(RandomSeed); }
 
     UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Creating chunky room..."));
 
@@ -83,7 +74,8 @@ if (!bIsInitialized)
 	{ UE_LOG(LogTemp, Warning, TEXT("UUniformRoomGenerator::GenerateFloor - No floor meshes defined in FloorTilePool!")); return false;}
 	
 	// Clear previous placement data
-	ClearPlacedFloorMeshes();
+	//ClearPlacedFloorMeshes();
+	//ClearPlacedFloorMeshes();
 	
 	int32 FloorLargeTilesPlaced = 0;
 	int32 FloorMediumTilesPlaced = 0;

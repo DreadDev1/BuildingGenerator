@@ -136,7 +136,7 @@ void ARoomSpawner::GenerateFloorMeshes()
 	}
 	
 	// CLEANUP: Clear existing floor meshes
-	ClearFloorMeshes();
+	//ClearFloorMeshes();
 	
 	// Generate Floor Layout
 	DebugHelpers->LogImportant(TEXT("Generating floor layout..."));

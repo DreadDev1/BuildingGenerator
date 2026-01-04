@@ -1064,8 +1064,7 @@ FMeshPlacementInfo URoomGenerator::SelectWeightedMesh(const TArray<FMeshPlacemen
 
 bool URoomGenerator::TryPlaceMesh(FIntPoint StartCoord, FIntPoint Size, const FMeshPlacementInfo& MeshInfo, int32 Rotation)
 {
-	// Try to place in grid using helper (handles validation + marking)
-	if (! URoomGenerationHelpers::TryPlaceMeshInGrid(GridState, GridSize, StartCoord, Size, EGridCellType::ECT_FloorMesh))
+	if (!IsAreaAvailable(StartCoord, Size))  // ✅ Instance method
 		return false;
 	
 	// Create placed mesh info
