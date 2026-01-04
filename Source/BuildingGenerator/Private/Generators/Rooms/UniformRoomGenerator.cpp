@@ -3,6 +3,8 @@
 
 #include "Generators/Rooms/UniformRoomGenerator.h"
 
+#include "Utilities/Generation/RoomGenerationHelpers.h"
+
 
 void UUniformRoomGenerator::CreateGrid()
 {
@@ -239,8 +241,183 @@ bool UUniformRoomGenerator::GenerateCorners()
 
 bool UUniformRoomGenerator::GenerateDoorways()
 {
-	// Will implement in Step 6
-	return false;
+ if (!bIsInitialized)
+    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateDoorways - Generator not initialized!  ")); return false; }
+
+    if (!RoomData)
+    { UE_LOG(LogTemp, Error, TEXT("URoomGenerator::GenerateDoorways - RoomData is null! ")); return false; }
+     
+    // CHECK FOR CACHED LAYOUT
+	if (CachedDoorwayLayouts.Num() > 0)
+    {
+        UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Using cached layout (%d doorways), recalculating transforms"),
+            CachedDoorwayLayouts.Num());
+        
+        // Clear old transforms but keep layout
+        PlacedDoorwayMeshes.  Empty();
+        
+        // Recalculate transforms from cached layouts (with current offsets)
+        for (const FDoorwayLayoutInfo& Layout : CachedDoorwayLayouts)
+        {
+            FPlacedDoorwayInfo PlacedDoor = CalculateDoorwayTransforms(Layout);
+            PlacedDoorwayMeshes.Add(PlacedDoor);
+        }
+        
+        MarkDoorwayCells();
+        
+        UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Transforms recalculated with current offsets"));
+        return true;
+    }
+	
+    // NO CACHE - GENERATE NEW LAYOUT
+	UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Generating new doorway layout"));
+
+    // Clear both layout and transforms
+    PlacedDoorwayMeshes.Empty();
+    CachedDoorwayLayouts.Empty();
+
+    int32 ManualDoorwaysPlaced = 0;
+    int32 AutomaticDoorwaysPlaced = 0;
+
+     
+    // PHASE 1: Process Manual Doorway Placements
+	for (const FFixedDoorLocation& ForcedDoor : RoomData->ForcedDoorways)
+    {
+        // Validate door data
+         DoorData = ForcedDoor.DoorData ?  ForcedDoor.DoorData : RoomData->DefaultDoorData;
+        
+        if (!DoorData)
+        { UE_LOG(LogTemp, Warning, TEXT("  Forced doorway has no DoorData, skipping")); continue; }
+    	
+		int32 DoorWidth = DoorData->GetTotalDoorwayWidth();
+    	UE_LOG(LogTemp, Log, TEXT("  Manual doorway:  Edge=%s, FrameFootprint=%d, SideFills=%s, TotalWidth=%d"),
+    	*UEnum::GetValueAsString(ForcedDoor.WallEdge), DoorData->FrameFootprintY, *UEnum:: GetValueAsString(DoorData->SideFillType), DoorWidth);
+        // Validate bounds
+        TArray<FIntPoint> EdgeCells = URoomGenerationHelpers::GetEdgeCellIndices(ForcedDoor.WallEdge, GridSize);
+        
+        if (ForcedDoor.StartCell < 0 || ForcedDoor.StartCell + DoorWidth > EdgeCells.Num())
+        { UE_LOG(LogTemp, Warning, TEXT("  Forced doorway out of bounds, skipping")); continue; }
+
+        // ✅ Create and cache layout info
+        FDoorwayLayoutInfo LayoutInfo;
+        LayoutInfo.Edge = ForcedDoor.WallEdge;
+        LayoutInfo.StartCell = ForcedDoor.StartCell;
+        LayoutInfo.WidthInCells = DoorWidth;
+        LayoutInfo.DoorData = DoorData;
+        LayoutInfo.bIsStandardDoorway = false;
+        LayoutInfo.ManualOffsets = ForcedDoor.DoorPositionOffsets;  // Store manual offsets
+
+        CachedDoorwayLayouts.Add(LayoutInfo);
+
+        // ✅ Calculate transforms from layout
+        FPlacedDoorwayInfo PlacedDoor = CalculateDoorwayTransforms(LayoutInfo);
+        PlacedDoorwayMeshes.Add(PlacedDoor);
+
+        ManualDoorwaysPlaced++;
+    }
+	
+	// PHASE 2: Generate Automatic Standard Doorway
+	if (RoomData->bGenerateStandardDoorway && RoomData->DefaultDoorData)
+    {
+        // Determine edges to use
+        TArray<EWallEdge> EdgesToUse;
+        
+        if (RoomData->bSetStandardDoorwayEdge)
+        {
+            EdgesToUse. Add(RoomData->StandardDoorwayEdge);
+            UE_LOG(LogTemp, Log, TEXT("  Using manual edge:   %s"), *UEnum::GetValueAsString(RoomData->StandardDoorwayEdge));
+        }
+        else if (RoomData->bMultipleDoorways)
+        {
+            int32 NumDoorways = FMath:: Clamp(RoomData->NumAutomaticDoorways, 2, 4);
+            
+            TArray<EWallEdge> AllEdges = { EWallEdge:: North, EWallEdge::  South, EWallEdge:: East, EWallEdge:: West };
+            
+            FRandomStream Stream(FMath:: Rand());
+            for (int32 i = AllEdges.Num() - 1; i > 0; --i)
+            {
+                int32 j = Stream.RandRange(0, i);
+                AllEdges. Swap(i, j);
+            }
+            
+            for (int32 i = 0; i < NumDoorways && i < AllEdges.Num(); ++i)
+            {
+                EdgesToUse.Add(AllEdges[i]);
+            }
+            
+            UE_LOG(LogTemp, Log, TEXT("  Generating %d automatic doorways"), NumDoorways);
+        }
+        else
+        {
+            FRandomStream Stream(FMath::Rand());
+            TArray<EWallEdge> AllEdges = 
+            { EWallEdge::North, EWallEdge::South, 
+				EWallEdge:: East, EWallEdge:: West 
+            };
+            EWallEdge ChosenEdge = AllEdges[Stream.RandRange(0, AllEdges.Num() - 1)];
+            EdgesToUse.Add(ChosenEdge);
+            
+            UE_LOG(LogTemp, Log, TEXT("  Using random edge:  %s"), *UEnum::GetValueAsString(ChosenEdge));
+        }
+        
+        // Generate doorway on each chosen edge
+        for (EWallEdge ChosenEdge : EdgesToUse)
+        {
+            TArray<FIntPoint> EdgeCells = URoomGenerationHelpers::GetEdgeCellIndices(ChosenEdge, GridSize);
+            int32 EdgeLength = EdgeCells.Num();
+
+            int32 StartCell = (EdgeLength - RoomData->StandardDoorwayWidth) / 2;
+            StartCell = FMath:: Clamp(StartCell, 0, EdgeLength - RoomData->StandardDoorwayWidth);
+
+            // Check for overlap with existing doorways
+            bool bOverlaps = false;
+            for (const FDoorwayLayoutInfo& ExistingLayout : CachedDoorwayLayouts)
+            {
+                if (ExistingLayout.Edge == ChosenEdge)
+                {
+                    int32 ExistingStart = ExistingLayout.StartCell;
+                    int32 ExistingEnd = ExistingStart + ExistingLayout.WidthInCells;
+                    int32 NewStart = StartCell;
+                    int32 NewEnd = StartCell + RoomData->StandardDoorwayWidth;
+
+                    if (NewStart < ExistingEnd && ExistingStart < NewEnd)
+                    {
+                        bOverlaps = true;
+                        UE_LOG(LogTemp, Warning, TEXT("  Doorway on %s would overlap, skipping"), *UEnum::  GetValueAsString(ChosenEdge));
+                        break;
+                    }
+                }
+            }
+
+            if (!bOverlaps)
+            {
+                // ✅ Create and cache layout info
+                FDoorwayLayoutInfo LayoutInfo;
+                LayoutInfo.Edge = ChosenEdge;
+                LayoutInfo.StartCell = StartCell;
+                LayoutInfo. WidthInCells = RoomData->StandardDoorwayWidth;
+                LayoutInfo.DoorData = RoomData->DefaultDoorData;
+                LayoutInfo.bIsStandardDoorway = true;
+                // No manual offsets for automatic doorways
+
+                CachedDoorwayLayouts.Add(LayoutInfo);
+
+                // ✅ Calculate transforms from layout
+                FPlacedDoorwayInfo PlacedDoor = CalculateDoorwayTransforms(LayoutInfo);
+                PlacedDoorwayMeshes. Add(PlacedDoor);
+
+                AutomaticDoorwaysPlaced++;
+            }
+        }
+    }
+
+	// PHASE 3: Mark Doorway Cells
+	MarkDoorwayCells();
+
+    UE_LOG(LogTemp, Log, TEXT("URoomGenerator::GenerateDoorways - Complete.   Cached %d layouts, placed %d doorways"),
+        CachedDoorwayLayouts.Num(), PlacedDoorwayMeshes.Num());
+
+    return true;
 }
 
 bool UUniformRoomGenerator::GenerateCeiling()

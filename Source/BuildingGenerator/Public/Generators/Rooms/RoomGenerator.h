@@ -6,6 +6,7 @@
 #include "Data/Grid/GridData.h"
 #include "Data/Room/FloorData.h"
 #include "Data/Room/WallData.h"
+#include "Data/Room/DoorData.h"
 #include "Data/Room/RoomData.h"
 #include "RoomGenerator.generated.h"
 
@@ -149,6 +150,9 @@ public:
 	
 #pragma region Doorway Generation
 
+	UPROPERTY(EditAnywhere)
+	UDoorData* DoorData;
+	
 	/* Generate doorways (manual + automatic standard doorway) */
 	virtual bool GenerateDoorways();
 
