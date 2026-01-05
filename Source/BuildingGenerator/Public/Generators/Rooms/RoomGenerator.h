@@ -233,6 +233,7 @@ public:
 	// Placed walls
 	UPROPERTY()
 	TArray<FPlacedWallInfo> PlacedWallMeshes;
+	
 	// Placed corners
 	UPROPERTY()
 	TArray<FPlacedCornerInfo> PlacedCornerMeshes;

@@ -211,10 +211,10 @@ int32 URoomGenerator::ExecuteForcedPlacements()
 
 		// Validate bounds with best rotation
 		if (StartCoord.X + BestFootprint.X > GridSize.X || 
-		    StartCoord.Y + BestFootprint. Y > GridSize.Y)
+		    StartCoord.Y + BestFootprint.Y > GridSize.Y)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("  Forced placement at (%d,%d) is out of bounds (size %dx%d) - skipping"), 
-				StartCoord.X, StartCoord.Y, BestFootprint. X, BestFootprint.Y);
+				StartCoord.X, StartCoord.Y, BestFootprint.X, BestFootprint.Y);
 			continue;
 		}
 
@@ -930,7 +930,7 @@ int32 URoomGenerator::ExecuteForcedCeilingPlacements(TArray<bool>& CeilingOccupi
         // Calculate tile position (centered on footprint)
         FVector TilePosition = FVector(
             (ForcedTile.GridCoordinate.X + BestFootprint.X / 2.0f) * CellSize,
-            (ForcedTile.GridCoordinate.Y + BestFootprint. Y / 2.0f) * CellSize,
+            (ForcedTile.GridCoordinate.Y + BestFootprint.Y / 2.0f) * CellSize,
             CeilingData->CeilingHeight
         );
 

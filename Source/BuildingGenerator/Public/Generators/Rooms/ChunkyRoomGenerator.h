@@ -62,6 +62,7 @@ public:
 #pragma endregion
 	
 #pragma region Internal Helpers
+#pragma region Internal Helper variables
 	/** Random stream for deterministic generation */
 	FRandomStream RandomStream;
 	
@@ -69,6 +70,9 @@ public:
 	FIntPoint BaseRoomStart;
 	FIntPoint BaseRoomSize;
 	
+	/** Corner cells marked during GenerateCorners (walls will skip these) */
+	TSet<FIntPoint> CornerCells;
+#pragma endregion
 	/** Mark a rectangular area as floor cells */
 	void MarkRectangle(int32 StartX, int32 StartY, int32 Width, int32 Height);
 	
@@ -80,7 +84,9 @@ public:
 	
 	/** Get all perimeter cells (floor cells adjacent to empty cells) */
 	TArray<FIntPoint> GetPerimeterCells() const;
-	
+#pragma endregion
+
+#pragma region Wall Generation Helper functions
 	/** Get directional offset for a wall edge */
 	FIntPoint GetDirectionOffset(EWallEdge Direction) const;
 	
@@ -93,9 +99,19 @@ public:
 	/** Calculate wall position for a segment starting at a specific cell */
 	FVector CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell, int32 ModuleFootprint,
 	float NorthOffset, float SouthOffset, float EastOffset, float WestOffset) const;
-	
-	
 #pragma endregion
-
 	
+#pragma region Corner Generation Helper functions
+	/** Check if a floor cell is a corner (has void on 2+ adjacent sides) */
+	bool IsCornerCell(FIntPoint Cell, TArray<EWallEdge>& OutAdjacentVoidEdges) const;
+	
+	/** Determine corner position (NE/NW/SE/SW) from adjacent void edges */
+	ECornerPosition GetCornerPositionFromEdges(const TArray<EWallEdge>& AdjacentEdges) const;
+
+	/** Get position offset for a specific corner type from WallData */
+	FVector GetCornerPositionOffset(ECornerPosition  CornerType) const;
+	
+	/** Check if this cell is marked as a corner (for wall generation to skip) */
+	bool IsCellMarkedAsCorner(FIntPoint Cell) const;
+#pragma endregion
 };

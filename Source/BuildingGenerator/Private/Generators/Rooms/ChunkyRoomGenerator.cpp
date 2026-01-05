@@ -134,26 +134,25 @@ if (!bIsInitialized)
 
 bool UChunkyRoomGenerator::GenerateWalls()
 {
-	if (! bIsInitialized)
+	if (!bIsInitialized)
 	{
 		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator:: GenerateWalls - Not initialized! "));
 		return false;
 	}
 
-	if (! RoomData || RoomData->WallStyleData.IsNull())
+	if (!RoomData || RoomData->WallStyleData.IsNull())
 	{
 		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateWalls - No WallData assigned!"));
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Starting wall generation (VOID-BASED)"));
+	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Starting (skipping %d corner cells)"), 
+		CornerCells.Num());
 
 	// Clear previous walls
 	ClearPlacedWalls();
 
-	// Fill each edge using void-based edge detection
-	UE_LOG(LogTemp, Log, TEXT("  Detecting void-based edges..."));
-    
+	// Fill each edge using dual detection (void + boundaries), skipping corners
 	FillChunkyWallEdge(EWallEdge::North);
 	FillChunkyWallEdge(EWallEdge::South);
 	FillChunkyWallEdge(EWallEdge::East);
@@ -161,7 +160,7 @@ bool UChunkyRoomGenerator::GenerateWalls()
 
 	UE_LOG(LogTemp, Log, TEXT("  Placed %d base wall segments"), PlacedBaseWallSegments.Num());
 
-	// Spawn middle and top layers (uses base class logic)
+	// Spawn middle and top layers
 	SpawnMiddleWallLayers();
 	SpawnTopWallLayer();
 
@@ -173,7 +172,104 @@ bool UChunkyRoomGenerator::GenerateWalls()
 
 bool UChunkyRoomGenerator::GenerateCorners()
 {
-	return false;
+  if (!bIsInitialized)
+    {
+        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateCorners - Not initialized! "));
+        return false;
+    }
+
+    if (! RoomData || RoomData->WallStyleData.IsNull())
+    {
+        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateCorners - No WallData assigned!"));
+        return false;
+    }
+
+    // Load WallData
+    WallData = RoomData->WallStyleData. LoadSynchronous();
+    if (!WallData || ! WallData->DefaultCornerMesh.IsValid())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("UChunkyRoomGenerator::GenerateCorners - No corner mesh defined in WallData"));
+        return false;
+    }
+
+    // Load corner mesh
+    TSoftObjectPtr<UStaticMesh> CornerMeshPtr = WallData->DefaultCornerMesh;
+    if (!CornerMeshPtr.IsValid())
+    {
+        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateCorners - Failed to load corner mesh"));
+        return false;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateCorners - Starting corner detection"));
+
+    // Clear previous corner data
+    CornerCells. Empty();
+    ClearPlacedCorners();
+
+    int32 CornersPlaced = 0;
+
+    // Scan all floor cells for corners
+    for (int32 Y = 0; Y < GridSize. Y; ++Y)
+    {
+        for (int32 X = 0; X < GridSize.X; ++X)
+        {
+            FIntPoint Cell(X, Y);
+
+            // Must be a floor cell
+            if (GetCellState(Cell) != EGridCellType::ECT_FloorMesh)
+                continue;
+
+            // Check if this is a corner cell
+            TArray<EWallEdge> AdjacentVoidEdges;
+            if (! IsCornerCell(Cell, AdjacentVoidEdges))
+                continue;
+
+            // Determine corner position from edges
+            ECornerPosition CornerPos = GetCornerPositionFromEdges(AdjacentVoidEdges);
+            
+            if (CornerPos == ECornerPosition::None)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("  Invalid corner position at (%d,%d)"), Cell.X, Cell.Y);
+                continue;
+            }
+
+            UE_LOG(LogTemp, Verbose, TEXT("  Found corner at (%d,%d) - Type: %s"),
+                Cell.X, Cell.Y, *UEnum::GetValueAsString(CornerPos));
+
+            // Calculate corner position (center of cell)
+            FVector CornerPosition;
+            CornerPosition.X = Cell.X * CellSize + (CellSize * 0.5f);
+            CornerPosition.Y = Cell.Y * CellSize + (CellSize * 0.5f);
+            CornerPosition.Z = 0.0f;  // Floor level
+
+            // Apply corner-specific position offsets from WallData (if configured)
+            FVector PositionOffset = GetCornerPositionOffset(CornerPos);
+            CornerPosition += PositionOffset;
+
+            // Create transform (no rotation needed for square mesh)
+            FTransform CornerTransform(FRotator::ZeroRotator, CornerPosition, FVector::OneVector);
+
+            // Create FPlacedCornerInfo
+            FPlacedCornerInfo CornerInfo;
+            CornerInfo.Corner = CornerPos;
+            CornerInfo.Transform = CornerTransform;
+            CornerInfo. CornerMesh = CornerMeshPtr;
+
+            PlacedCornerMeshes.Add(CornerInfo);
+
+            // Mark cell as corner (so walls will skip it)
+            CornerCells.Add(Cell);
+
+            CornersPlaced++;
+
+            UE_LOG(LogTemp, VeryVerbose, TEXT("    Placed %s corner at (%d,%d)"),
+                *UEnum::GetValueAsString(CornerPos), Cell.X, Cell.Y);
+        }
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateCorners - Complete! %d corners placed"), CornersPlaced);
+
+    return true;
 }
 
 bool UChunkyRoomGenerator::GenerateDoorways()
@@ -300,6 +396,7 @@ bool UChunkyRoomGenerator::HasFloorNeighbor(FIntPoint Cell, FIntPoint Direction)
 	
 	return GetCellState(Neighbor) == EGridCellType::ECT_FloorMesh;
 }
+#pragma endregion
 
 #pragma region Wall Generation Helpers
 TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCells() const
@@ -497,64 +594,61 @@ FIntPoint UChunkyRoomGenerator::GetDirectionOffset(EWallEdge Direction) const
 
 TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCellsForEdge(EWallEdge Edge) const
 {
-    TArray<FIntPoint> EdgeCells;
+	TArray<FIntPoint> EdgeCells;
 
-    // Get direction offset for this edge (using correct coordinate system)
-    FIntPoint EdgeDirection = GetDirectionOffset(Edge);
+	// Get direction offset for this edge
+	FIntPoint EdgeDirection = GetDirectionOffset(Edge);
     
-    // DUAL DETECTION: Find BOTH void-adjacent floor cells AND grid boundary floor cells
-    
-    for (int32 Y = 0; Y < GridSize. Y; ++Y)
-    {
-        for (int32 X = 0; X < GridSize.X; ++X)
-        {
-            FIntPoint FloorCell(X, Y);
+	for (int32 Y = 0; Y < GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridSize.X; ++X)
+		{
+			FIntPoint FloorCell(X, Y);
             
-            // Must be a floor cell
-            if (GetCellState(FloorCell) != EGridCellType::ECT_FloorMesh)
-                continue;
+			// Must be a floor cell
+			if (GetCellState(FloorCell) != EGridCellType::ECT_FloorMesh)
+				continue;
 
-            // Check neighbor in edge direction
-            FIntPoint Neighbor = FloorCell + EdgeDirection;
+			// SKIP if this cell is marked as a corner
+			if (IsCellMarkedAsCorner(FloorCell))
+				continue;
+
+			// Check neighbor in edge direction
+			FIntPoint Neighbor = FloorCell + EdgeDirection;
             
-            // Edge condition:  Neighbor is OUT OF BOUNDS or VOID
-            bool bIsEdge = false;
+			// Edge condition:  Neighbor is OUT OF BOUNDS or VOID
+			bool bIsEdge = false;
             
-            if (! IsValidGridCoordinate(Neighbor))
-            {
-                // Grid boundary edge
-                bIsEdge = true;
-            }
-            else if (GetCellState(Neighbor) == EGridCellType::ECT_Void)
-            {
-                // Void edge
-                bIsEdge = true;
-            }
+			if (!IsValidGridCoordinate(Neighbor))
+			{
+				bIsEdge = true;  // Grid boundary edge
+			}
+			else if (GetCellState(Neighbor) == EGridCellType::ECT_Void)
+			{
+				bIsEdge = true;  // Void edge
+			}
             
-            if (bIsEdge)
-            {
-                EdgeCells.Add(FloorCell);
-            }
-        }
-    }
+			if (bIsEdge)
+			{
+				EdgeCells.Add(FloorCell);
+			}
+		}
+	}
 
-    // Sort cells to create a linear sequence
-    // Coordinate system: +X=North, +Y=East
-    if (Edge == EWallEdge::North || Edge == EWallEdge:: South)
-    {
-        // North/South edges run East-West, sort by Y coordinate
-        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y < B.Y; });
-    }
-    else // East or West
-    {
-        // East/West edges run North-South, sort by X coordinate
-        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X < B.X; });
-    }
+	// Sort cells to create a linear sequence
+	if (Edge == EWallEdge::North || Edge == EWallEdge::South)
+	{
+		EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y < B.Y; });
+	}
+	else
+	{
+		EdgeCells. Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X < B.X; });
+	}
 
-    UE_LOG(LogTemp, Verbose, TEXT("  GetPerimeterCellsForEdge(%s): Found %d edge cells"), 
-        *UEnum::GetValueAsString(Edge), EdgeCells.Num());
+	UE_LOG(LogTemp, Verbose, TEXT("  GetPerimeterCellsForEdge(%s): Found %d edge cells (corners excluded)"), 
+		*UEnum::GetValueAsString(Edge), EdgeCells.Num());
 
-    return EdgeCells;
+	return EdgeCells;
 }
 
 FVector UChunkyRoomGenerator:: CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell,
@@ -610,5 +704,112 @@ FVector UChunkyRoomGenerator:: CalculateWallPositionForSegment(EWallEdge Directi
     return Position;
 }
 #pragma endregion
-#pragma endregion
 
+#pragma region Corner Generation Helpers
+bool UChunkyRoomGenerator::IsCornerCell(FIntPoint Cell, TArray<EWallEdge>& OutAdjacentVoidEdges) const
+{
+    OutAdjacentVoidEdges. Empty();
+    
+    // Check all four cardinal directions for void/boundary
+    TArray<EWallEdge> DirectionsToCheck = {EWallEdge::North, EWallEdge:: South, EWallEdge::East, EWallEdge::West};
+    
+    for (EWallEdge Edge : DirectionsToCheck)
+    {
+        FIntPoint Direction = GetDirectionOffset(Edge);
+        FIntPoint Neighbor = Cell + Direction;
+        
+        // Check if neighbor is out of bounds or void
+        if (! IsValidGridCoordinate(Neighbor) || GetCellState(Neighbor) == EGridCellType::ECT_Void)
+        {
+            OutAdjacentVoidEdges.Add(Edge);
+        }
+    }
+    
+    // A corner has void on exactly 2 adjacent sides
+    if (OutAdjacentVoidEdges.Num() != 2)
+        return false;
+    
+    // Check if the two void sides are ADJACENT (not opposite)
+    EWallEdge Edge1 = OutAdjacentVoidEdges[0];
+    EWallEdge Edge2 = OutAdjacentVoidEdges[1];
+    
+    // Opposite pairs (NOT corners):
+    if ((Edge1 == EWallEdge::North && Edge2 == EWallEdge::South) ||
+        (Edge1 == EWallEdge::South && Edge2 == EWallEdge::North) ||
+        (Edge1 == EWallEdge::East && Edge2 == EWallEdge::West) ||
+        (Edge1 == EWallEdge::West && Edge2 == EWallEdge::East))
+    {
+        return false;  // Opposite sides = thin wall, not corner
+    }
+    
+    // Adjacent sides = valid corner
+    return true;
+}
+
+ECornerPosition UChunkyRoomGenerator::GetCornerPositionFromEdges(const TArray<EWallEdge>& AdjacentEdges) const
+{
+    // Coordinate system: +X=North, +Y=East
+    
+    if (AdjacentEdges.Num() != 2)
+        return ECornerPosition::None;
+    
+    EWallEdge Edge1 = AdjacentEdges[0];
+    EWallEdge Edge2 = AdjacentEdges[1];
+    
+    // Helper lambda to check edge combinations
+    auto ContainsEdges = [&](EWallEdge A, EWallEdge B) -> bool {
+        return (Edge1 == A && Edge2 == B) || (Edge1 == B && Edge2 == A);
+    };
+    
+    // Determine corner position based on which two edges have void
+    if (ContainsEdges(EWallEdge::North, EWallEdge::East))
+    {
+        return ECornerPosition::NorthEast;
+    }
+    else if (ContainsEdges(EWallEdge::North, EWallEdge::West))
+    {
+        return ECornerPosition::NorthWest;
+    }
+    else if (ContainsEdges(EWallEdge::South, EWallEdge::East))
+    {
+        return ECornerPosition:: SouthEast;
+    }
+    else if (ContainsEdges(EWallEdge::South, EWallEdge::West))
+    {
+        return ECornerPosition::SouthWest;
+    }
+    
+    return ECornerPosition:: None;
+}
+
+FVector UChunkyRoomGenerator::GetCornerPositionOffset(ECornerPosition CornerPos) const
+{
+    // Use offsets from WallData (designer-configurable)
+    if (! WallData)
+        return FVector::ZeroVector;
+    
+    switch (CornerPos)
+    {
+        case ECornerPosition::NorthEast:  
+            return WallData->NorthEastCornerOffset;
+            
+        case ECornerPosition:: NorthWest:  
+            return WallData->NorthWestCornerOffset;
+            
+        case ECornerPosition::SouthEast: 
+            return WallData->SouthEastCornerOffset;
+            
+        case ECornerPosition::SouthWest:
+            return WallData->SouthWestCornerOffset;
+            
+        default:
+            return FVector::ZeroVector;
+    }
+}
+
+bool UChunkyRoomGenerator::IsCellMarkedAsCorner(FIntPoint Cell) const
+{
+    return CornerCells.Contains(Cell);
+}
+
+#pragma endregion

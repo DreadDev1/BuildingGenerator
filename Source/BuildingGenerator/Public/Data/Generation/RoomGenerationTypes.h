@@ -24,6 +24,7 @@ enum class EWallEdge : uint8
 UENUM(BlueprintType)
 enum class ECornerPosition : uint8
 {
+	None		   UMETA(DisplayName = "None"),
 	SouthWest = 0  UMETA(DisplayName = "Southwest (Bottom-Left)"),
 	SouthEast = 1  UMETA(DisplayName = "Southeast (Bottom-Right)"),
 	NorthEast = 2  UMETA(DisplayName = "Northeast (Top-Right)"),
