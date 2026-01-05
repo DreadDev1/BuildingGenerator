@@ -6,6 +6,59 @@
 #include "Generators/Rooms/RoomGenerator.h"
 #include "ChunkyRoomGenerator.generated.h"
 
+// Forward declarations
+enum class EWallEdge : uint8;
+
+/* Stores a perimeter cell with information about which direction it needs walls */
+USTRUCT()
+struct FPerimeterCellInfo
+{
+	GENERATED_BODY()
+
+	/** Grid coordinate of the perimeter cell */
+	UPROPERTY()
+	FIntPoint Cell = FIntPoint::ZeroValue;
+
+	/** Which direction the wall should face (inward toward room) */
+	UPROPERTY()
+	EWallEdge FacingDirection = EWallEdge::North;
+
+	/** Whether this cell is a corner (needs walls on multiple sides) */
+	UPROPERTY()
+	bool bIsCorner = false;
+
+	FPerimeterCellInfo() {}
+    
+	FPerimeterCellInfo(FIntPoint InCell, EWallEdge InDirection, bool bInIsCorner = false)
+		: Cell(InCell), FacingDirection(InDirection), bIsCorner(bInIsCorner)
+	{}
+};
+
+/* Represents a continuous segment of walls facing the same direction */
+USTRUCT()
+struct FChunkyWallSegment
+{
+	GENERATED_BODY()
+
+	/** Which direction walls in this segment face */
+	UPROPERTY()
+	EWallEdge Direction = EWallEdge::North;
+
+	/** All cells that are part of this segment */
+	UPROPERTY()
+	TArray<FIntPoint> Cells;
+
+	/** First cell in the segment */
+	UPROPERTY()
+	FIntPoint StartCell = FIntPoint::ZeroValue;
+
+	/** Number of cells in this segment */
+	UPROPERTY()
+	int32 Length = 0;
+
+	FChunkyWallSegment() {}
+};
+
 UCLASS()
 class BUILDINGGENERATOR_API UChunkyRoomGenerator : public URoomGenerator
 {
@@ -77,6 +130,24 @@ public:
 	
 	/** Get all perimeter cells (floor cells adjacent to empty cells) */
 	TArray<FIntPoint> GetPerimeterCells() const;
+	
+	/** Get perimeter cells with wall facing direction information */
+	TArray<FPerimeterCellInfo> GetPerimeterCellsWithDirection() const;
+	
+	/** Determine which direction a wall should face for a perimeter cell */
+	EWallEdge DetermineWallDirection(FIntPoint Cell) const;
+	
+	/** Check if a perimeter cell is a corner (needs walls on multiple sides) */
+	bool IsCornerCell(FIntPoint Cell) const;
+	
+	/** Group perimeter cells into continuous wall segments */
+	TArray<FChunkyWallSegment> GroupPerimeterIntoSegments(const TArray<FPerimeterCellInfo>& PerimeterCells) const;
+	
+	/** Place walls for a single segment */
+	void PlaceWallSegment(const FChunkyWallSegment& Segment);
+	
+	/** Get directional offset for a wall edge */
+	FIntPoint GetDirectionOffset(EWallEdge Direction) const;
 #pragma endregion
 
 	

@@ -2,6 +2,8 @@
 
 #include "Generators/Rooms/ChunkyRoomGenerator.h"
 
+#include "Utilities/Generation/RoomGenerationHelpers.h"
+
 void UChunkyRoomGenerator::CreateGrid()
 {
 	   if (!bIsInitialized)
@@ -130,9 +132,57 @@ if (!bIsInitialized)
 	return true;
 }
 
-bool UChunkyRoomGenerator::GenerateWalls()
+bool UChunkyRoomGenerator:: GenerateWalls()
 {
-	return false;
+	if (!bIsInitialized)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateWalls - Not initialized! "));
+		return false;
+	}
+
+	if (!RoomData || RoomData->WallStyleData. IsNull())
+	{
+		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateWalls - No WallData assigned!"));
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Starting wall generation"));
+
+	// Clear previous walls
+	ClearPlacedWalls();
+
+	// PHASE 1: Get perimeter cells with direction info
+	TArray<FPerimeterCellInfo> PerimeterCells = GetPerimeterCellsWithDirection();
+    
+	if (PerimeterCells. Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("  No perimeter cells found! "));
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("  Found %d perimeter wall placements"), PerimeterCells.Num());
+
+	// PHASE 2: Group into segments
+	TArray<FChunkyWallSegment> WallSegments = GroupPerimeterIntoSegments(PerimeterCells);
+    
+	UE_LOG(LogTemp, Log, TEXT("  Grouped into %d wall segments"), WallSegments.Num());
+
+	// PHASE 3: Place base walls for each segment
+	for (const FChunkyWallSegment& Segment : WallSegments)
+	{
+		PlaceWallSegment(Segment);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("  Placed %d base wall segments"), PlacedBaseWallSegments. Num());
+
+	// PHASE 4: Spawn middle and top layers (uses base class logic)
+	SpawnMiddleWallLayers();
+	SpawnTopWallLayer();
+
+	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Complete!  %d walls placed"), 
+		PlacedWallMeshes.Num());
+
+	return true;
 }
 
 bool UChunkyRoomGenerator::GenerateCorners()
@@ -312,4 +362,249 @@ TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCells() const
 
 	return PerimeterCells;
 }
+
+#pragma region Wall Generation Helpers
+TArray<FPerimeterCellInfo> UChunkyRoomGenerator::GetPerimeterCellsWithDirection() const
+{
+    TArray<FPerimeterCellInfo> PerimeterInfo;
+
+    // Check all floor cells to find perimeter
+    for (int32 X = 0; X < GridSize. X; ++X)
+    {
+        for (int32 Y = 0; Y < GridSize.Y; ++Y)
+        {
+            FIntPoint Cell(X, Y);
+            
+            // Only check floor mesh cells (already placed floors)
+            if (GetCellState(Cell) != EGridCellType::ECT_FloorMesh)
+                continue;
+
+            // Check all 4 directions to see if this cell borders void
+            TArray<EWallEdge> WallDirections;
+            
+            // North (Y+1)
+            FIntPoint NorthNeighbor = Cell + FIntPoint(0, 1);
+            if (! IsValidGridCoordinate(NorthNeighbor) || GetCellState(NorthNeighbor) == EGridCellType::ECT_Void)
+            {
+                WallDirections.Add(EWallEdge::North);  // Wall faces south (into room)
+            }
+            
+            // South (Y-1)
+            FIntPoint SouthNeighbor = Cell + FIntPoint(0, -1);
+            if (!IsValidGridCoordinate(SouthNeighbor) || GetCellState(SouthNeighbor) == EGridCellType::ECT_Void)
+            {
+                WallDirections.Add(EWallEdge::South);  // Wall faces north
+            }
+            
+            // East (X+1)
+            FIntPoint EastNeighbor = Cell + FIntPoint(1, 0);
+            if (!IsValidGridCoordinate(EastNeighbor) || GetCellState(EastNeighbor) == EGridCellType::ECT_Void)
+            {
+                WallDirections.Add(EWallEdge::East);  // Wall faces west
+            }
+            
+            // West (X-1)
+            FIntPoint WestNeighbor = Cell + FIntPoint(-1, 0);
+            if (!IsValidGridCoordinate(WestNeighbor) || GetCellState(WestNeighbor) == EGridCellType::ECT_Void)
+            {
+                WallDirections.Add(EWallEdge::West);  // Wall faces east
+            }
+
+            // Add perimeter cell info for each direction that needs a wall
+            bool bIsCorner = WallDirections.Num() > 1;
+            
+            for (EWallEdge Direction :  WallDirections)
+            {
+                PerimeterInfo.Add(FPerimeterCellInfo(Cell, Direction, bIsCorner));
+            }
+        }
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GetPerimeterCellsWithDirection - Found %d perimeter walls"), 
+        PerimeterInfo.Num());
+
+    return PerimeterInfo;
+}
+
+EWallEdge UChunkyRoomGenerator::DetermineWallDirection(FIntPoint Cell) const
+{
+    // Check each direction and return first one that borders void
+    // North
+    FIntPoint NorthNeighbor = Cell + FIntPoint(0, 1);
+    if (!IsValidGridCoordinate(NorthNeighbor) || GetCellState(NorthNeighbor) == EGridCellType::ECT_Void)
+        return EWallEdge::North;
+    
+    // South
+    FIntPoint SouthNeighbor = Cell + FIntPoint(0, -1);
+    if (!IsValidGridCoordinate(SouthNeighbor) || GetCellState(SouthNeighbor) == EGridCellType::ECT_Void)
+        return EWallEdge::South;
+    
+    // East
+    FIntPoint EastNeighbor = Cell + FIntPoint(1, 0);
+    if (!IsValidGridCoordinate(EastNeighbor) || GetCellState(EastNeighbor) == EGridCellType::ECT_Void)
+        return EWallEdge::East;
+    
+    // West
+    FIntPoint WestNeighbor = Cell + FIntPoint(-1, 0);
+    if (!IsValidGridCoordinate(WestNeighbor) || GetCellState(WestNeighbor) == EGridCellType::ECT_Void)
+        return EWallEdge::West;
+
+    // Default fallback
+    return EWallEdge::North;
+}
+
+bool UChunkyRoomGenerator:: IsCornerCell(FIntPoint Cell) const
+{
+    int32 VoidNeighborCount = 0;
+
+    // Count how many neighbors are void
+    TArray<FIntPoint> Directions = {
+        FIntPoint(0, 1),   // North
+        FIntPoint(0, -1),  // South
+        FIntPoint(1, 0),   // East
+        FIntPoint(-1, 0)   // West
+    };
+
+    for (const FIntPoint& Dir : Directions)
+    {
+        FIntPoint Neighbor = Cell + Dir;
+        if (!IsValidGridCoordinate(Neighbor) || GetCellState(Neighbor) == EGridCellType::ECT_Void)
+        {
+            VoidNeighborCount++;
+        }
+    }
+
+    // Corner if 2+ sides face void
+    return VoidNeighborCount >= 2;
+}
+
+FIntPoint UChunkyRoomGenerator::GetDirectionOffset(EWallEdge Direction) const
+{
+    switch (Direction)
+    {
+        case EWallEdge::North:  return FIntPoint(0, 1);
+        case EWallEdge::South: return FIntPoint(0, -1);
+        case EWallEdge:: East:   return FIntPoint(1, 0);
+        case EWallEdge::West:  return FIntPoint(-1, 0);
+        default: return FIntPoint::ZeroValue;
+    }
+}
+
+TArray<FChunkyWallSegment> UChunkyRoomGenerator::GroupPerimeterIntoSegments(
+    const TArray<FPerimeterCellInfo>& PerimeterCells) const
+{
+    TArray<FChunkyWallSegment> Segments;
+
+    // Group cells by direction
+    TMap<EWallEdge, TArray<FIntPoint>> CellsByDirection;
+    
+    for (const FPerimeterCellInfo& CellInfo : PerimeterCells)
+    {
+        CellsByDirection. FindOrAdd(CellInfo.FacingDirection).Add(CellInfo.Cell);
+    }
+
+    // For each direction, create segments from consecutive cells
+    for (const auto& Pair : CellsByDirection)
+    {
+        EWallEdge Direction = Pair.Key;
+        const TArray<FIntPoint>& Cells = Pair.Value;
+
+        if (Cells.Num() == 0) continue;
+
+        // Simple approach: Each group of cells in same direction = one segment
+        FChunkyWallSegment Segment;
+        Segment.Direction = Direction;
+        Segment. Cells = Cells;
+        Segment.StartCell = Cells[0];
+        Segment.Length = Cells.Num();
+
+        Segments.Add(Segment);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GroupPerimeterIntoSegments - Created %d segments"), 
+        Segments.Num());
+
+    return Segments;
+}
+
+void UChunkyRoomGenerator::PlaceWallSegment(const FChunkyWallSegment& Segment)
+{
+    if (! RoomData || RoomData->WallStyleData.IsNull()) return;
+
+    WallData = RoomData->WallStyleData. LoadSynchronous();
+    if (!WallData || WallData->AvailableWallModules. Num() == 0) return;
+
+    // Get wall offsets
+    float NorthOffset = WallData->NorthWallOffsetX;
+    float SouthOffset = WallData->SouthWallOffsetX;
+    float EastOffset = WallData->EastWallOffsetY;
+    float WestOffset = WallData->WestWallOffsetY;
+
+    FRotator WallRotation = URoomGenerationHelpers::GetWallRotationForEdge(Segment.Direction);
+
+    // For now:  Place a 1-cell wall at each cell in the segment
+    // TODO: Later optimize to use larger wall modules
+    
+    for (const FIntPoint& Cell : Segment.Cells)
+    {
+        // Find a 1-cell wall module
+        const FWallModule* SingleCellModule = nullptr;
+        
+        for (const FWallModule& Module : WallData->AvailableWallModules)
+        {
+            if (Module.Y_AxisFootprint == 1)
+            {
+                SingleCellModule = &Module;
+                break;
+            }
+        }
+
+        if (!SingleCellModule)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("No 1-cell wall module found! "));
+            continue;
+        }
+
+        // Load base mesh
+        UStaticMesh* BaseMesh = SingleCellModule->BaseMesh. LoadSynchronous();
+        if (!BaseMesh) continue;
+
+        // Calculate wall position
+        FVector WallPosition = URoomGenerationHelpers:: CalculateWallPosition(
+            Segment.Direction,
+            0,  // Cell index (not used for single cell)
+            1,  // Footprint
+            GridSize,
+            CellSize,
+            NorthOffset,
+            SouthOffset,
+            EastOffset,
+            WestOffset
+        );
+
+        // Adjust position to cell coordinate
+        WallPosition.X = Cell.X * CellSize + (CellSize * 0.5f);
+        WallPosition.Y = Cell. Y * CellSize + (CellSize * 0.5f);
+
+        // Create transform
+        FTransform BaseTransform(WallRotation, WallPosition, FVector:: OneVector);
+
+        // Store segment for middle/top spawning
+        FGeneratorWallSegment GeneratorSegment;
+        GeneratorSegment.Edge = Segment.Direction;
+        GeneratorSegment.StartCell = 0;  // Not used for chunky
+        GeneratorSegment. SegmentLength = 1;
+        GeneratorSegment.BaseTransform = BaseTransform;
+        GeneratorSegment.BaseMesh = BaseMesh;
+        GeneratorSegment.WallModule = SingleCellModule;
+
+        PlacedBaseWallSegments.Add(GeneratorSegment);
+    }
+
+    UE_LOG(LogTemp, Verbose, TEXT("  Placed %d walls for %s-facing segment"), 
+        Segment.Cells.Num(), *UEnum::GetValueAsString(Segment.Direction));
+}
+
 #pragma endregion
+#pragma endregion
+
