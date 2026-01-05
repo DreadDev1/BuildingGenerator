@@ -360,7 +360,7 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
     // Get perimeter cells for this edge (replaces GetEdgeCellIndices)
     TArray<FIntPoint> EdgeCells = GetPerimeterCellsForEdge(Edge);
     if (EdgeCells.Num() == 0) return;
-
+	
     FRotator WallRotation = URoomGenerationHelpers::GetWallRotationForEdge(Edge);
     
     // Get wall offsets
@@ -392,29 +392,31 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
                 
                 for (int32 i = 1; i < Module.Y_AxisFootprint; ++i)
                 {
-                    FIntPoint CurrentCellPos = EdgeCells[CurrentCell + i - 1];
-                    FIntPoint NextCellPos = EdgeCells[CurrentCell + i];
+                	FIntPoint CurrentCellPos = EdgeCells[CurrentCell + i - 1];
+                	FIntPoint NextCellPos = EdgeCells[CurrentCell + i];
                     
-                    // Check adjacency based on edge direction
-                    // EdgeCells are now VOID cells, not floor cells
-                    bool bAdjacent = false;
+                	// Check adjacency based on edge direction
+                	// Coordinate system: +X=North, +Y=East
+                	bool bAdjacent = false;
                     
-                    if (Edge == EWallEdge::North || Edge == EWallEdge:: South)
-                    {
-                        // Horizontal edges: X should increment by 1, Y same
-                        bAdjacent = (NextCellPos.X == CurrentCellPos.X + 1) && (NextCellPos.Y == CurrentCellPos.Y);
-                    }
-                    else // East or West
-                    {
-                        // Vertical edges:  Y should increment by 1, X same
-                        bAdjacent = (NextCellPos. Y == CurrentCellPos.Y + 1) && (NextCellPos.X == CurrentCellPos.X);
-                    }
+                	if (Edge == EWallEdge::North || Edge == EWallEdge:: South)
+                	{
+                		// North/South walls extend East-West (along Y-axis)
+                		// Y should increment by 1, X should stay same
+                		bAdjacent = (NextCellPos. Y == CurrentCellPos.Y + 1) && (NextCellPos.X == CurrentCellPos.X);
+                	}
+                	else // East or West
+                	{
+                		// East/West walls extend North-South (along X-axis)
+                		// X should increment by 1, Y should stay same
+                		bAdjacent = (NextCellPos.X == CurrentCellPos.X + 1) && (NextCellPos.Y == CurrentCellPos.Y);
+                	}
                     
-                    if (! bAdjacent)
-                    {
-                        bCellsConsecutive = false;
-                        break;
-                    }
+                	if (! bAdjacent)
+                	{
+                		bCellsConsecutive = false;
+                		break;
+                	}
                 }
                 
                 if (bCellsConsecutive)
@@ -558,51 +560,52 @@ TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCellsForEdge(EWallEdge Edge)
 FVector UChunkyRoomGenerator:: CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell,
     int32 ModuleFootprint, float NorthOffset, float SouthOffset, float EastOffset, float WestOffset) const
 {
-    FVector Position = FVector::ZeroVector;
+    FVector Position = FVector:: ZeroVector;
 
-    // StartCell is now a FLOOR cell at the edge
+    // StartCell is a FLOOR cell at the edge
     // Calculate center of the module span
     float HalfFootprint = (ModuleFootprint - 1) * 0.5f;
 
     // Coordinate system: +X=North, +Y=East
     // Wall mesh Y-axis = length of wall
+    // Offsets are applied PERPENDICULAR to the wall's length
     
     switch (Direction)
     {
         case EWallEdge::North:
             // Wall at NORTH edge (+X boundary)
             // Wall extends along Y-axis (East-West)
-            // Wall faces -X (South, into room)
-            Position. X = (StartCell.X + 1) * CellSize;  // North edge of floor cell
-            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f) + NorthOffset;
+            // Offset is applied on X-axis (perpendicular to wall length)
+            Position. X = (StartCell.X + 1) * CellSize + NorthOffset;  // ← Offset on X-axis
+            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f);
             break;
 
         case EWallEdge:: South:
             // Wall at SOUTH edge (-X boundary)
             // Wall extends along Y-axis (East-West)
-            // Wall faces +X (North, into room)
-            Position.X = StartCell.X * CellSize;  // South edge of floor cell
-            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f) + SouthOffset;
+            // Offset is applied on X-axis (perpendicular to wall length)
+            Position.X = StartCell.X * CellSize + SouthOffset;  // ← Offset on X-axis
+            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f);
             break;
 
         case EWallEdge::East:
             // Wall at EAST edge (+Y boundary)
             // Wall extends along X-axis (North-South)
-            // Wall faces -Y (West, into room)
-            Position. X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f) + EastOffset;
-            Position.Y = (StartCell.Y + 1) * CellSize;  // East edge of floor cell
+            // Offset is applied on Y-axis (perpendicular to wall length)
+            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f);
+            Position.Y = (StartCell.Y + 1) * CellSize + EastOffset;  // ← Offset on Y-axis
             break;
 
-        case EWallEdge::West:
+        case EWallEdge:: West:
             // Wall at WEST edge (-Y boundary)
             // Wall extends along X-axis (North-South)
-            // Wall faces +Y (East, into room)
-            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f) + WestOffset;
-            Position.Y = StartCell.Y * CellSize;  // West edge of floor cell
+            // Offset is applied on Y-axis (perpendicular to wall length)
+            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f);
+            Position.Y = StartCell.Y * CellSize + WestOffset;  // ← Offset on Y-axis
             break;
     }
 
-    Position. Z = 0.0f;  // Floor level
+    Position.Z = 0.0f;  // Floor level
 
     return Position;
 }
