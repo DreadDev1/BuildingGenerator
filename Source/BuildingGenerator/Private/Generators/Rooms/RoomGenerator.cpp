@@ -60,13 +60,14 @@ void URoomGenerator::ResetGridCellStates()
 	if (! bIsInitialized)
 	{ UE_LOG(LogTemp, Warning, TEXT("URoomGenerator::ResetGridCellStates - Not initialized! ")); return; }
 
-	// Reset all cells to empty
+	// Reset only floor-placed cells back to their target type (preserves room shape)
 	int32 CellsReset = 0;
 	for (EGridCellType& Cell : GridState)
 	{
-		if (Cell != EGridCellType::ECT_Empty)
+		// ✅ Only reset cells that were filled with floor meshes
+		if (Cell == EGridCellType::ECT_FloorMesh)
 		{
-			Cell = EGridCellType:: ECT_Empty;
+			Cell = FloorTargetCellType;  // Back to Empty (Uniform) or Custom (Chunky)
 			CellsReset++;
 		}
 	}
@@ -1064,8 +1065,9 @@ FMeshPlacementInfo URoomGenerator::SelectWeightedMesh(const TArray<FMeshPlacemen
 
 bool URoomGenerator::TryPlaceMesh(FIntPoint StartCoord, FIntPoint Size, const FMeshPlacementInfo& MeshInfo, int32 Rotation)
 {
-	if (!IsAreaAvailable(StartCoord, Size))  // ✅ Instance method
-		return false;
+	if (! URoomGenerationHelpers::TryPlaceMeshInGrid(GridState, GridSize, StartCoord, Size, 
+	   FloorTargetCellType,EGridCellType::ECT_FloorMesh))
+	   	return false;
 	
 	// Create placed mesh info
 	FPlacedMeshInfo PlacedMesh;

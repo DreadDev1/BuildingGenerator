@@ -136,7 +136,7 @@ void ARoomSpawner::GenerateFloorMeshes()
 	}
 	
 	// CLEANUP: Clear existing floor meshes
-	//ClearFloorMeshes();
+	ClearFloorMeshes();
 	
 	// Generate Floor Layout
 	DebugHelpers->LogImportant(TEXT("Generating floor layout..."));
@@ -206,7 +206,7 @@ void ARoomSpawner::ClearFloorMeshes()
 		// Clear placed mesh array
 		RoomGenerator->ClearPlacedFloorMeshes();
 		
-		// Reset grid cells back to empty for fresh generation
+		// Reset grid cells (ECT_FloorMesh → back to target type)
 		RoomGenerator->ResetGridCellStates();
 	}
 	DebugHelpers->LogImportant(TEXT("Floor meshes cleared"));

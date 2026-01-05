@@ -107,10 +107,10 @@ FIntPoint Size, EGridCellType CellType)
 }
 
 bool URoomGenerationHelpers::TryPlaceMeshInGrid(TArray<EGridCellType>& GridState, FIntPoint GridSize, FIntPoint StartCoord,
-FIntPoint Size, EGridCellType PlacementType)
+FIntPoint Size, EGridCellType TargetCellType, EGridCellType PlacementType)
 {
-	// Check if area is available
-	if (!IsAreaAvailable(GridState, GridSize, StartCoord, Size, EGridCellType::ECT_Empty)) return false;
+	// Check if area is available (using the target type passed in)
+	if (!IsAreaAvailable(GridState, GridSize, StartCoord, Size, TargetCellType)) return false;
 
 	// Mark cells as occupied
 	MarkCellsOccupied(GridState, GridSize, StartCoord, Size, PlacementType);

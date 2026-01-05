@@ -57,7 +57,7 @@ class BUILDINGGENERATOR_API URoomGenerationHelpers : public UBlueprintFunctionLi
 	* @return True if placement succeeded, false if area unavailable */
 	UFUNCTION(BlueprintCallable, Category = "Dungeon Generation|Grid")
 	static bool TryPlaceMeshInGrid(TArray<EGridCellType>& GridState, FIntPoint GridSize, FIntPoint StartCoord,
-	FIntPoint Size,	EGridCellType PlacementType = EGridCellType::ECT_FloorMesh);
+	FIntPoint Size,	EGridCellType TargetCellType, EGridCellType PlacementType = EGridCellType::ECT_FloorMesh);
 #pragma endregion
 
 #pragma region Rotation & Footprint Operations
