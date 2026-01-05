@@ -134,9 +134,9 @@ if (!bIsInitialized)
 
 bool UChunkyRoomGenerator::GenerateWalls()
 {
-	if (!bIsInitialized)
+	if (! bIsInitialized)
 	{
-		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateWalls - Not initialized! "));
+		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator:: GenerateWalls - Not initialized! "));
 		return false;
 	}
 
@@ -146,12 +146,14 @@ bool UChunkyRoomGenerator::GenerateWalls()
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Starting wall generation"));
+	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Starting wall generation (VOID-BASED)"));
 
 	// Clear previous walls
 	ClearPlacedWalls();
 
-	// Fill each edge using adapted base class logic
+	// Fill each edge using void-based edge detection
+	UE_LOG(LogTemp, Log, TEXT("  Detecting void-based edges..."));
+    
 	FillChunkyWallEdge(EWallEdge::North);
 	FillChunkyWallEdge(EWallEdge::South);
 	FillChunkyWallEdge(EWallEdge::East);
@@ -382,10 +384,10 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
 
         for (const FWallModule& Module : WallData->AvailableWallModules)
         {
-            // Check if module fits remaining space
+      // Check if module fits remaining space
             if (Module.Y_AxisFootprint <= SpaceLeft)
             {
-                // Check if cells are consecutive
+                // Check if VOID cells are consecutive
                 bool bCellsConsecutive = true;
                 
                 for (int32 i = 1; i < Module.Y_AxisFootprint; ++i)
@@ -394,17 +396,18 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
                     FIntPoint NextCellPos = EdgeCells[CurrentCell + i];
                     
                     // Check adjacency based on edge direction
+                    // EdgeCells are now VOID cells, not floor cells
                     bool bAdjacent = false;
                     
                     if (Edge == EWallEdge::North || Edge == EWallEdge:: South)
                     {
-                        // Horizontal:  X should increment by 1, Y same
+                        // Horizontal edges: X should increment by 1, Y same
                         bAdjacent = (NextCellPos.X == CurrentCellPos.X + 1) && (NextCellPos.Y == CurrentCellPos.Y);
                     }
                     else // East or West
                     {
-                        // Vertical: Y should increment by 1, X same
-                        bAdjacent = (NextCellPos.Y == CurrentCellPos.Y + 1) && (NextCellPos.X == CurrentCellPos.X);
+                        // Vertical edges:  Y should increment by 1, X same
+                        bAdjacent = (NextCellPos. Y == CurrentCellPos.Y + 1) && (NextCellPos.X == CurrentCellPos.X);
                     }
                     
                     if (! bAdjacent)
@@ -427,7 +430,7 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
 
         if (! BestModule)
         {
-            UE_LOG(LogTemp, Warning, TEXT("    No wall module fits at cell %d (remaining: %d)"), 
+            UE_LOG(LogTemp, Warning, TEXT("    No wall module fits at void cell %d (remaining:  %d)"), 
                 CurrentCell, SpaceLeft);
             CurrentCell++;  // Skip this cell
             continue;
@@ -442,13 +445,13 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
             continue;
         }
 
-        // Get starting cell for this module
-        FIntPoint StartCell = EdgeCells[CurrentCell];
+        // Get starting VOID cell for this module
+        FIntPoint StartVoidCell = EdgeCells[CurrentCell];
 
-        // Calculate wall position using adapted logic
+        // Calculate wall position using void-based logic
         FVector WallPosition = CalculateWallPositionForSegment(
             Edge,
-            StartCell,
+            StartVoidCell,  // ← Now passing void cell, not floor cell
             BestModule->Y_AxisFootprint,
             NorthOffset,
             SouthOffset,
@@ -457,7 +460,7 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
         );
 
         // Create transform
-        FTransform BaseTransform(WallRotation, WallPosition, FVector:: OneVector);
+        FTransform BaseTransform(WallRotation, WallPosition, FVector::OneVector);
 
         // Store segment for middle/top spawning
         FGeneratorWallSegment Segment;
@@ -470,8 +473,8 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
 
         PlacedBaseWallSegments.Add(Segment);
 
-        UE_LOG(LogTemp, VeryVerbose, TEXT("    Placed %dY module at cell (%d,%d)"),
-            BestModule->Y_AxisFootprint, StartCell.X, StartCell.Y);
+        UE_LOG(LogTemp, VeryVerbose, TEXT("    Placed %dY module at void cell (%d,%d)"),
+            BestModule->Y_AxisFootprint, StartVoidCell.X, StartVoidCell.Y);
 
         // Advance by module footprint
         CurrentCell += BestModule->Y_AxisFootprint;
@@ -482,11 +485,11 @@ FIntPoint UChunkyRoomGenerator::GetDirectionOffset(EWallEdge Direction) const
 {
 	switch (Direction)
 	{
-	case EWallEdge::North:  return FIntPoint(0, 1);
-	case EWallEdge::South: return FIntPoint(0, -1);
-	case EWallEdge:: East:   return FIntPoint(1, 0);
-	case EWallEdge::West:  return FIntPoint(-1, 0);
-	default: return FIntPoint::ZeroValue;
+	case EWallEdge::North:  return FIntPoint(1, 0);   // +X (North)
+	case EWallEdge::South:  return FIntPoint(-1, 0);  // -X (South)
+	case EWallEdge:: East:   return FIntPoint(0, 1);   // +Y (East)
+	case EWallEdge::West:   return FIntPoint(0, -1);  // -Y (West)
+	default:  return FIntPoint:: ZeroValue;
 	}
 }
 
@@ -494,104 +497,114 @@ TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCellsForEdge(EWallEdge Edge)
 {
     TArray<FIntPoint> EdgeCells;
 
-    // Determine which direction to check for void based on edge
-    FIntPoint VoidCheckOffset;
+    // Get direction offset for this edge (using correct coordinate system)
+    FIntPoint EdgeDirection = GetDirectionOffset(Edge);
     
-    switch (Edge)
-    {
-        case EWallEdge::North:
-            VoidCheckOffset = FIntPoint(0, 1);   // Check North neighbor (Y+1)
-            break;
-        case EWallEdge::South:
-            VoidCheckOffset = FIntPoint(0, -1);  // Check South neighbor (Y-1)
-            break;
-        case EWallEdge::East:
-            VoidCheckOffset = FIntPoint(1, 0);   // Check East neighbor (X+1)
-            break;
-        case EWallEdge::West:
-            VoidCheckOffset = FIntPoint(-1, 0);  // Check West neighbor (X-1)
-            break;
-    	default: 
-    		return EdgeCells;
-    }
-
-    // Scan all grid cells to find floor cells with void in the specified direction
-    for (int32 Y = 0; Y < GridSize.Y; ++Y)
+    // DUAL DETECTION: Find BOTH void-adjacent floor cells AND grid boundary floor cells
+    
+    for (int32 Y = 0; Y < GridSize. Y; ++Y)
     {
         for (int32 X = 0; X < GridSize.X; ++X)
         {
-            FIntPoint Cell(X, Y);
+            FIntPoint FloorCell(X, Y);
             
             // Must be a floor cell
-            if (GetCellState(Cell) != EGridCellType::ECT_FloorMesh)
+            if (GetCellState(FloorCell) != EGridCellType::ECT_FloorMesh)
                 continue;
 
-            // Check if neighbor in specified direction is void
-            FIntPoint Neighbor = Cell + VoidCheckOffset;
+            // Check neighbor in edge direction
+            FIntPoint Neighbor = FloorCell + EdgeDirection;
             
-            if (! IsValidGridCoordinate(Neighbor) || GetCellState(Neighbor) == EGridCellType::ECT_Void)
+            // Edge condition:  Neighbor is OUT OF BOUNDS or VOID
+            bool bIsEdge = false;
+            
+            if (! IsValidGridCoordinate(Neighbor))
             {
-                EdgeCells.Add(Cell);
+                // Grid boundary edge
+                bIsEdge = true;
+            }
+            else if (GetCellState(Neighbor) == EGridCellType::ECT_Void)
+            {
+                // Void edge
+                bIsEdge = true;
+            }
+            
+            if (bIsEdge)
+            {
+                EdgeCells.Add(FloorCell);
             }
         }
     }
 
     // Sort cells to create a linear sequence
-    if (Edge == EWallEdge::North || Edge == EWallEdge::South)
+    // Coordinate system: +X=North, +Y=East
+    if (Edge == EWallEdge::North || Edge == EWallEdge:: South)
     {
-        // Horizontal walls: sort by X coordinate
-        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X < B. X; });
+        // North/South edges run East-West, sort by Y coordinate
+        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y < B.Y; });
     }
     else // East or West
     {
-        // Vertical walls: sort by Y coordinate
-        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y < B.Y; });
+        // East/West edges run North-South, sort by X coordinate
+        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X < B.X; });
     }
 
-    UE_LOG(LogTemp, Verbose, TEXT("  GetPerimeterCellsForEdge(%s): Found %d cells"), 
+    UE_LOG(LogTemp, Verbose, TEXT("  GetPerimeterCellsForEdge(%s): Found %d edge cells"), 
         *UEnum::GetValueAsString(Edge), EdgeCells.Num());
 
     return EdgeCells;
 }
 
-FVector UChunkyRoomGenerator::CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell,
-	int32 ModuleFootprint, float NorthOffset, float SouthOffset, float EastOffset, float WestOffset) const
+FVector UChunkyRoomGenerator:: CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell,
+    int32 ModuleFootprint, float NorthOffset, float SouthOffset, float EastOffset, float WestOffset) const
 {
-	FVector Position = FVector::ZeroVector;
+    FVector Position = FVector::ZeroVector;
 
-	// Calculate center of the module span
-	float HalfFootprint = (ModuleFootprint - 1) * 0.5f;
+    // StartCell is now a FLOOR cell at the edge
+    // Calculate center of the module span
+    float HalfFootprint = (ModuleFootprint - 1) * 0.5f;
 
-	switch (Direction)
-	{
-	case EWallEdge::North:
-		// Wall faces south (into room), positioned at cell's north edge
-		Position. X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f) + NorthOffset;
-		Position.Y = (StartCell.Y * CellSize) + CellSize + (CellSize * 0.5f);
-		break;
+    // Coordinate system: +X=North, +Y=East
+    // Wall mesh Y-axis = length of wall
+    
+    switch (Direction)
+    {
+        case EWallEdge::North:
+            // Wall at NORTH edge (+X boundary)
+            // Wall extends along Y-axis (East-West)
+            // Wall faces -X (South, into room)
+            Position. X = (StartCell.X + 1) * CellSize;  // North edge of floor cell
+            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f) + NorthOffset;
+            break;
 
-	case EWallEdge::South:
-		// Wall faces north (into room), positioned at cell's south edge
-		Position. X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f) + SouthOffset;
-		Position.Y = (StartCell.Y * CellSize);
-		break;
+        case EWallEdge:: South:
+            // Wall at SOUTH edge (-X boundary)
+            // Wall extends along Y-axis (East-West)
+            // Wall faces +X (North, into room)
+            Position.X = StartCell.X * CellSize;  // South edge of floor cell
+            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f) + SouthOffset;
+            break;
 
-	case EWallEdge::East: 
-		// Wall faces west (into room), positioned at cell's east edge
-		Position.X = (StartCell.X * CellSize) + CellSize;
-		Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f) + EastOffset;
-		break;
+        case EWallEdge::East:
+            // Wall at EAST edge (+Y boundary)
+            // Wall extends along X-axis (North-South)
+            // Wall faces -Y (West, into room)
+            Position. X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f) + EastOffset;
+            Position.Y = (StartCell.Y + 1) * CellSize;  // East edge of floor cell
+            break;
 
-	case EWallEdge:: West:
-		// Wall faces east (into room), positioned at cell's west edge
-		Position.X = (StartCell.X * CellSize);
-		Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f) + WestOffset;
-		break;
-	}
+        case EWallEdge::West:
+            // Wall at WEST edge (-Y boundary)
+            // Wall extends along X-axis (North-South)
+            // Wall faces +Y (East, into room)
+            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f) + WestOffset;
+            Position.Y = StartCell.Y * CellSize;  // West edge of floor cell
+            break;
+    }
 
-	Position. Z = 0.0f;  // Floor level
+    Position. Z = 0.0f;  // Floor level
 
-	return Position;
+    return Position;
 }
 #pragma endregion
 #pragma endregion

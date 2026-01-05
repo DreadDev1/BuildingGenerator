@@ -93,6 +93,8 @@ public:
 	/** Calculate wall position for a segment starting at a specific cell */
 	FVector CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell, int32 ModuleFootprint,
 	float NorthOffset, float SouthOffset, float EastOffset, float WestOffset) const;
+	
+	
 #pragma endregion
 
 	
