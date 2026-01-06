@@ -4,61 +4,181 @@
 
 #include "Utilities/Generation/RoomGenerationHelpers.h"
 
-void UChunkyRoomGenerator::CreateGrid()
+
+void UChunkyRoomGenerator:: CreateGrid()
 {
-	   if (!bIsInitialized)
-    { UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::CreateGrid - Generator not initialized!")); return; }
+    if (!bIsInitialized)
+    {
+        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::CreateGrid - Generator not initialized!"));
+        return;
+    }
 
     // SET TARGET CELL TYPE FOR FLOOR GENERATION
     FloorTargetCellType = EGridCellType::ECT_Custom;
 
     // Initialize random stream
-    if (RandomSeed == -1) { RandomStream.Initialize(FMath::Rand()); }
-    else{ RandomStream.Initialize(RandomSeed); }
+    if (RandomSeed == -1) { RandomStream. Initialize(FMath:: Rand()); }
+    else { RandomStream.Initialize(RandomSeed); }
 
-    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Creating chunky room..."));
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Creating chunk-based room... "));
 
-    // Step 1: Initialize grid (all cells VOID - outside room)
+    // ===== STEP 1: Calculate chunk grid dimensions =====
+    ChunkGridSize.X = GridSize.X / 2;
+    ChunkGridSize.Y = GridSize.Y / 2;
+
+    if (ChunkGridSize.X < 2 || ChunkGridSize.Y < 2)
+    {
+        UE_LOG(LogTemp, Error, TEXT("  Grid too small for chunk system!  Minimum 4×4 cells required (2×2 chunks)"));
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("  Cell Grid:  %d×%d cells"), GridSize.X, GridSize.Y);
+    UE_LOG(LogTemp, Log, TEXT("  Chunk Grid: %d×%d chunks (each chunk = 2×2 cells = 200cm)"),
+        ChunkGridSize.X, ChunkGridSize.Y);
+
+    // ===== STEP 2: Initialize cell grid (all VOID) =====
     int32 TotalCells = GridSize.X * GridSize.Y;
     GridState.SetNum(TotalCells);
     for (EGridCellType& Cell : GridState)
     {
-        Cell = EGridCellType::ECT_Void;  // CHANGED: Outside room
+        Cell = EGridCellType::ECT_Void;
     }
 
-    // Step 2: Calculate base room bounds (starting at 0,0)
-    BaseRoomSize.X = FMath::Max(4, (int32)(GridSize.X * BaseRoomPercentage));
-    BaseRoomSize.Y = FMath::Max(4, (int32)(GridSize.Y * BaseRoomPercentage));
-    BaseRoomStart.X = 0;
-    BaseRoomStart.Y = 0;
+    // ===== STEP 3: Initialize chunk state (all void) =====
+    int32 TotalChunks = ChunkGridSize.X * ChunkGridSize.Y;
+    ChunkState.SetNum(TotalChunks);
+    for (bool& Chunk : ChunkState)
+    {
+        Chunk = false;  // false = void, true = room
+    }
 
-    UE_LOG(LogTemp, Verbose, TEXT("  Base room: Start(%d, %d), Size(%d, %d)"),
-        BaseRoomStart.X, BaseRoomStart.Y, BaseRoomSize.X, BaseRoomSize.Y);
+    // ===== STEP 4: Create base room in CHUNKS =====
+    int32 BaseWidthChunks = (int32)(ChunkGridSize.X * BaseRoomPercentage);
+    int32 BaseHeightChunks = (int32)(ChunkGridSize.Y * BaseRoomPercentage);
 
-    // Step 3: Mark base room cells as CUSTOM (part of room, needs floor)
-    MarkRectangle(BaseRoomStart.X, BaseRoomStart.Y, BaseRoomSize.X, BaseRoomSize.Y);
+    // Force even chunks (minimum 2×2)
+    BaseRoomSizeChunks.X = FMath::Max(2, (BaseWidthChunks / 2) * 2);
+    BaseRoomSizeChunks.Y = FMath::Max(2, (BaseHeightChunks / 2) * 2);
+    BaseRoomStartChunks = FIntPoint(0, 0);  // Always start at origin
 
-    // Step 4: Add random protrusions
+    // Convert to cells (for doorway/wall systems)
+    BaseRoomSize.X = BaseRoomSizeChunks.X * 2;
+    BaseRoomSize. Y = BaseRoomSizeChunks.Y * 2;
+    BaseRoomStart = FIntPoint(0, 0);
+
+    UE_LOG(LogTemp, Log, TEXT("  Base room (chunks): Start(%d,%d), Size(%d×%d)"),
+        BaseRoomStartChunks.X, BaseRoomStartChunks. Y,
+        BaseRoomSizeChunks.X, BaseRoomSizeChunks. Y);
+    UE_LOG(LogTemp, Log, TEXT("  Base room (cells):  Start(%d,%d), Size(%d×%d)"),
+        BaseRoomStart.X, BaseRoomStart. Y,
+        BaseRoomSize.X, BaseRoomSize. Y);
+
+    // Mark base room chunks
+    MarkChunkRectangle(BaseRoomStartChunks. X, BaseRoomStartChunks.Y,
+                       BaseRoomSizeChunks.X, BaseRoomSizeChunks.Y);
+
+    // ===== STEP 5: Add random protrusions (chunk-aligned) =====
     int32 NumProtrusions = RandomStream.RandRange(MinProtrusions, MaxProtrusions);
-    UE_LOG(LogTemp, Verbose, TEXT("  Adding %d protrusions..."), NumProtrusions);
+    UE_LOG(LogTemp, Log, TEXT("  Adding %d protrusions..."), NumProtrusions);
 
     for (int32 i = 0; i < NumProtrusions; ++i)
     {
-        AddRandomProtrusion();
+        AddRandomProtrusionChunked();
     }
 
-    // Step 5: Log statistics
-    int32 CustomCells = GetCellCountByType(EGridCellType::ECT_Custom);
+    // ===== STEP 6: Convert chunks → cells =====
+    ConvertChunksToCells();
+
+    // ===== STEP 7: Log statistics =====
+    int32 CustomCells = GetCellCountByType(EGridCellType:: ECT_Custom);
     int32 VoidCells = GetCellCountByType(EGridCellType::ECT_Void);
+    int32 RoomChunks = 0;
+    for (bool Chunk : ChunkState) { if (Chunk) RoomChunks++; }
 
     UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::CreateGrid - Complete"));
-    UE_LOG(LogTemp, Log, TEXT("  Grid: %d x %d (%d cells)"), GridSize.X, GridSize.Y, TotalCells);
-    UE_LOG(LogTemp, Log, TEXT("  Custom (room area): %d cells"), CustomCells);
-    UE_LOG(LogTemp, Log, TEXT("  Void (outside): %d cells"), VoidCells);
+    UE_LOG(LogTemp, Log, TEXT("  Cell Grid: %d×%d (%d cells)"), GridSize.X, GridSize. Y, TotalCells);
+    UE_LOG(LogTemp, Log, TEXT("  Chunk Grid: %d×%d (%d chunks)"), ChunkGridSize.X, ChunkGridSize.Y, TotalChunks);
+    UE_LOG(LogTemp, Log, TEXT("  Room chunks: %d, Custom cells: %d, Void cells: %d"),
+        RoomChunks, CustomCells, VoidCells);
     UE_LOG(LogTemp, Log, TEXT("  Protrusions: %d"), NumProtrusions);
 }
 
-bool UChunkyRoomGenerator::GenerateFloor()
+bool UChunkyRoomGenerator:: GenerateCorners()
+{
+	if (!bIsInitialized)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateCorners - Not initialized! "));
+		return false;
+	}
+
+	if (!RoomData || RoomData->WallStyleData.IsNull())
+	{
+		UE_LOG(LogTemp, Error, TEXT("GenerateCorners - No WallData assigned!"));
+		return false;
+	}
+
+	// Load WallData
+	WallData = RoomData->WallStyleData. LoadSynchronous();
+	if (!WallData || ! WallData->DefaultCornerMesh.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GenerateCorners - No corner mesh defined"));
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("GenerateCorners - Starting"));
+
+	// Clear previous corners
+	ClearPlacedCorners();
+	CornerOccupiedCells.Empty();
+
+	// PHASE 1: Interior Corners (Chunky-specific)
+	GenerateInteriorCorners();
+
+	// PHASE 2: Exterior Corners (TODO - implement later)
+	// GenerateExteriorCorners();
+
+	UE_LOG(LogTemp, Log, TEXT("GenerateCorners - Complete!  %d corners placed"), 
+		PlacedCornerMeshes.Num());
+
+	return true;
+}
+
+bool UChunkyRoomGenerator:: GenerateWalls()
+{
+    if (!bIsInitialized)
+    {
+        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator:: GenerateWalls - Not initialized! "));
+        return false;
+    }
+
+    if (!RoomData || RoomData->WallStyleData.IsNull())
+    {
+        UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateWalls - No WallData assigned!"));
+        return false;
+    }
+
+    // Clear previous walls
+    ClearPlacedWalls();
+
+    // Fill each edge using dual detection (void + boundaries), skipping corners
+    FillChunkyWallEdge(EWallEdge::North);
+    FillChunkyWallEdge(EWallEdge::South);
+    FillChunkyWallEdge(EWallEdge::East);
+    FillChunkyWallEdge(EWallEdge::West);
+
+    UE_LOG(LogTemp, Log, TEXT("  Placed %d base wall segments"), PlacedBaseWallSegments.Num());
+
+    // Spawn middle and top layers
+    SpawnMiddleWallLayers();
+    SpawnTopWallLayer();
+
+    UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Complete!  %d walls placed"), 
+        PlacedWallMeshes.Num());
+
+    return true;
+}
+
+bool UChunkyRoomGenerator:: GenerateFloor()
 {
 if (!bIsInitialized)
 	{ UE_LOG(LogTemp, Error, TEXT("UUniformRoomGenerator::GenerateFloor - Generator not initialized!")); return false; }
@@ -132,161 +252,171 @@ if (!bIsInitialized)
 	return true;
 }
 
-bool UChunkyRoomGenerator::GenerateWalls()
-{
-	if (! bIsInitialized)
-	{
-		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator:: GenerateWalls - Not initialized! "));
-		return false;
-	}
-
-	if (! RoomData || RoomData->WallStyleData.IsNull())
-	{
-		UE_LOG(LogTemp, Error, TEXT("UChunkyRoomGenerator::GenerateWalls - No WallData assigned!"));
-		return false;
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Starting wall generation (VOID-BASED)"));
-
-	// Clear previous walls
-	ClearPlacedWalls();
-
-	// Fill each edge using void-based edge detection
-	UE_LOG(LogTemp, Log, TEXT("  Detecting void-based edges..."));
-    
-	FillChunkyWallEdge(EWallEdge::North);
-	FillChunkyWallEdge(EWallEdge::South);
-	FillChunkyWallEdge(EWallEdge::East);
-	FillChunkyWallEdge(EWallEdge::West);
-
-	UE_LOG(LogTemp, Log, TEXT("  Placed %d base wall segments"), PlacedBaseWallSegments.Num());
-
-	// Spawn middle and top layers (uses base class logic)
-	SpawnMiddleWallLayers();
-	SpawnTopWallLayer();
-
-	UE_LOG(LogTemp, Log, TEXT("UChunkyRoomGenerator::GenerateWalls - Complete!  %d walls placed"), 
-		PlacedWallMeshes.Num());
-
-	return true;
-}
-
-bool UChunkyRoomGenerator::GenerateCorners()
-{
-	return false;
-}
-
 bool UChunkyRoomGenerator::GenerateDoorways()
 {
-	return false;
+    return false;
 }
 
 bool UChunkyRoomGenerator::GenerateCeiling()
 {
-	return false;
+    return false;
 }
 
-#pragma region Internal Helpers
-void UChunkyRoomGenerator::MarkRectangle(int32 StartX, int32 StartY, int32 Width, int32 Height)
+// ===== CHUNK HELPER FUNCTIONS =====
+
+void UChunkyRoomGenerator::MarkChunkRectangle(int32 StartX, int32 StartY, int32 Width, int32 Height)
 {
-	// Mark all cells in rectangle as floor
-	for (int32 Y = 0; Y < Height; ++Y)
-	{
-		for (int32 X = 0; X < Width; ++X)
-		{
-			FIntPoint Cell(StartX + X, StartY + Y);
-			
-			// Bounds check
-			if (IsValidGridCoordinate(Cell))
-			{
-				SetCellState(Cell, EGridCellType::ECT_Custom);
-			}
-		}
-	}
+    for (int32 Y = 0; Y < Height; ++Y)
+    {
+        for (int32 X = 0; X < Width; ++X)
+        {
+            FIntPoint ChunkCoord(StartX + X, StartY + Y);
+
+            // Bounds check
+            if (ChunkCoord.X >= 0 && ChunkCoord.X < ChunkGridSize.X &&
+                ChunkCoord.Y >= 0 && ChunkCoord. Y < ChunkGridSize.Y)
+            {
+                int32 ChunkIndex = ChunkCoord.Y * ChunkGridSize.X + ChunkCoord.X;
+                ChunkState[ChunkIndex] = true;  // Mark as room chunk
+            }
+        }
+    }
 }
 
-void UChunkyRoomGenerator::AddRandomProtrusion()
+void UChunkyRoomGenerator::AddRandomProtrusionChunked()
 {
-	// Pick random edge (0=North, 1=South, 2=East, 3=West)
-	int32 EdgeIndex = RandomStream.RandRange(0, 3);
-	EWallEdge Edge = (EWallEdge)EdgeIndex;
+    // Pick random edge
+    int32 EdgeIndex = RandomStream.RandRange(0, 3);
+    EWallEdge Edge = (EWallEdge)EdgeIndex;
 
-	// Pick random protrusion dimensions
-	int32 ProtrusionWidth = RandomStream.RandRange(MinProtrusionSize, MaxProtrusionSize);
-	int32 ProtrusionDepth = RandomStream.RandRange(MinProtrusionSize, MaxProtrusionSize);
+    // Pick random protrusion dimensions (IN CHUNKS, minimum 2)
+    int32 ProtrusionWidthChunks = RandomStream. RandRange(MinProtrusionSizeChunks, MaxProtrusionSizeChunks);
+    int32 ProtrusionDepthChunks = RandomStream. RandRange(MinProtrusionSizeChunks, MaxProtrusionSizeChunks);
 
-	// Calculate protrusion rectangle based on edge
-	FIntPoint Start;
-	FIntPoint Size;
+    // Calculate protrusion rectangle in chunk coordinates
+    FIntPoint StartChunks;
+    FIntPoint SizeChunks;
 
-	switch (Edge)
-	{
-		case EWallEdge::North: // Extend upward (positive Y)
-		{
-			// Pick random position along top edge
-			int32 EdgeLength = BaseRoomSize.X;
-			int32 Position = RandomStream.RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidth));
-			
-			Start = FIntPoint(BaseRoomStart.X + Position, BaseRoomStart.Y + BaseRoomSize.Y);
-			Size = FIntPoint(ProtrusionWidth, ProtrusionDepth);
-			break;
-		}
+    switch (Edge)
+    {
+        case EWallEdge::North:  // Extend upward (+Y in chunk space)
+        {
+            int32 EdgeLength = BaseRoomSizeChunks. X;
+            int32 Position = RandomStream.RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidthChunks));
 
-		case EWallEdge::South: // Extend downward (negative Y)
-		{
-			// Pick random position along bottom edge
-			int32 EdgeLength = BaseRoomSize.X;
-			int32 Position = RandomStream.RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidth));
-			
-			Start = FIntPoint(BaseRoomStart.X + Position, BaseRoomStart.Y - ProtrusionDepth);
-			Size = FIntPoint(ProtrusionWidth, ProtrusionDepth);
-			break;
-		}
+            StartChunks = FIntPoint(BaseRoomStartChunks.X + Position,
+                                    BaseRoomStartChunks. Y + BaseRoomSizeChunks. Y);
+            SizeChunks = FIntPoint(ProtrusionWidthChunks, ProtrusionDepthChunks);
+            break;
+        }
 
-		case EWallEdge::East: // Extend right (positive Y direction in grid)
-		{
-			// Pick random position along right edge
-			int32 EdgeLength = BaseRoomSize.Y;
-			int32 Position = RandomStream.RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidth));
-			
-			Start = FIntPoint(BaseRoomStart.X + BaseRoomSize.X, BaseRoomStart.Y + Position);
-			Size = FIntPoint(ProtrusionDepth, ProtrusionWidth);
-			break;
-		}
+        case EWallEdge::South:   // Extend downward (-Y)
+        {
+            int32 EdgeLength = BaseRoomSizeChunks.X;
+            int32 Position = RandomStream. RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidthChunks));
 
-		case EWallEdge::West: // Extend left (negative X)
-		{
-			// Pick random position along left edge
-			int32 EdgeLength = BaseRoomSize.Y;
-			int32 Position = RandomStream.RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidth));
-			
-			Start = FIntPoint(BaseRoomStart.X - ProtrusionDepth, BaseRoomStart.Y + Position);
-			Size = FIntPoint(ProtrusionDepth, ProtrusionWidth);
-			break;
-		}
+            StartChunks = FIntPoint(BaseRoomStartChunks.X + Position,
+                                    BaseRoomStartChunks.Y - ProtrusionDepthChunks);
+            SizeChunks = FIntPoint(ProtrusionWidthChunks, ProtrusionDepthChunks);
+            break;
+        }
 
-		default:
-			return;
-	}
+        case EWallEdge::East:  // Extend right (+X)
+        {
+            int32 EdgeLength = BaseRoomSizeChunks.Y;
+            int32 Position = RandomStream.RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidthChunks));
 
-	// Clamp to grid bounds
-	int32 ClampedStartX = FMath::Clamp(Start.X, 0, GridSize.X - 1);
-	int32 ClampedStartY = FMath::Clamp(Start.Y, 0, GridSize.Y - 1);
-	int32 ClampedWidth = FMath::Min(Size.X, GridSize.X - ClampedStartX);
-	int32 ClampedHeight = FMath::Min(Size.Y, GridSize.Y - ClampedStartY);
+            StartChunks = FIntPoint(BaseRoomStartChunks. X + BaseRoomSizeChunks.X,
+                                    BaseRoomStartChunks.Y + Position);
+            SizeChunks = FIntPoint(ProtrusionDepthChunks, ProtrusionWidthChunks);
+            break;
+        }
 
-	// Only add if there's valid space
-	if (ClampedWidth >= MinProtrusionSize && ClampedHeight >= MinProtrusionSize)
-	{
-		MarkRectangle(ClampedStartX, ClampedStartY, ClampedWidth, ClampedHeight);
-		
-		UE_LOG(LogTemp, Verbose, TEXT("    Added protrusion on edge %d: Start(%d,%d), Size(%d,%d)"),
-			EdgeIndex, ClampedStartX, ClampedStartY, ClampedWidth, ClampedHeight);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Verbose, TEXT("    Protrusion too small after clamping, skipped"));
-	}
+        case EWallEdge::West:  // Extend left (-X)
+        {
+            int32 EdgeLength = BaseRoomSizeChunks.Y;
+            int32 Position = RandomStream.RandRange(0, FMath::Max(1, EdgeLength - ProtrusionWidthChunks));
+
+            StartChunks = FIntPoint(BaseRoomStartChunks.X - ProtrusionDepthChunks,
+                                    BaseRoomStartChunks.Y + Position);
+            SizeChunks = FIntPoint(ProtrusionDepthChunks, ProtrusionWidthChunks);
+            break;
+        }
+
+        default:
+            return;
+    }
+
+    // Clamp to chunk grid bounds
+    int32 ClampedStartX = FMath:: Clamp(StartChunks. X, 0, ChunkGridSize.X - 1);
+    int32 ClampedStartY = FMath::Clamp(StartChunks.Y, 0, ChunkGridSize.Y - 1);
+    int32 ClampedWidth = FMath::Min(SizeChunks.X, ChunkGridSize.X - ClampedStartX);
+    int32 ClampedHeight = FMath::Min(SizeChunks.Y, ChunkGridSize.Y - ClampedStartY);
+
+    // Only add if valid size (minimum 2×2 chunks)
+    if (ClampedWidth >= MinProtrusionSizeChunks && ClampedHeight >= MinProtrusionSizeChunks)
+    {
+        MarkChunkRectangle(ClampedStartX, ClampedStartY, ClampedWidth, ClampedHeight);
+
+        UE_LOG(LogTemp, Verbose, TEXT("    Added protrusion on edge %d:  Start(%d,%d) chunks, Size(%d×%d) chunks = (%d×%d) cells"),
+            EdgeIndex, ClampedStartX, ClampedStartY, ClampedWidth, ClampedHeight,
+            ClampedWidth * 2, ClampedHeight * 2);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Verbose, TEXT("    Protrusion too small after clamping, skipped"));
+    }
+}
+
+void UChunkyRoomGenerator:: ConvertChunksToCells()
+{
+    UE_LOG(LogTemp, Verbose, TEXT("  Converting chunks to cells..."));
+
+    int32 ConvertedChunks = 0;
+
+    // For each chunk marked as "room", mark all 4 cells (2×2) as ECT_Custom
+    for (int32 ChunkY = 0; ChunkY < ChunkGridSize.Y; ++ChunkY)
+    {
+        for (int32 ChunkX = 0; ChunkX < ChunkGridSize.X; ++ChunkX)
+        {
+            int32 ChunkIndex = ChunkY * ChunkGridSize.X + ChunkX;
+
+            if (ChunkState[ChunkIndex])  // This chunk is part of the room
+            {
+                // Calculate starting cell coordinate for this chunk
+                int32 CellStartX = ChunkX * 2;
+                int32 CellStartY = ChunkY * 2;
+
+                // Mark all 4 cells in this chunk as ECT_Custom
+                for (int32 Y = 0; Y < 2; ++Y)
+                {
+                    for (int32 X = 0; X < 2; ++X)
+                    {
+                        FIntPoint CellCoord(CellStartX + X, CellStartY + Y);
+
+                        if (IsValidGridCoordinate(CellCoord))
+                        {
+                            SetCellState(CellCoord, EGridCellType::ECT_Custom);
+                        }
+                    }
+                }
+
+                ConvertedChunks++;
+            }
+        }
+    }
+
+    UE_LOG(LogTemp, Verbose, TEXT("  Converted %d chunks to %d cells"), ConvertedChunks, ConvertedChunks * 4);
+}
+
+FIntPoint UChunkyRoomGenerator::ChunkToCell(FIntPoint ChunkCoord) const
+{
+    return ChunkCoord * 2;
+}
+
+FIntPoint UChunkyRoomGenerator::CellToChunk(FIntPoint CellCoord) const
+{
+    return FIntPoint(CellCoord. X / 2, CellCoord.Y / 2);
 }
 
 bool UChunkyRoomGenerator::HasFloorNeighbor(FIntPoint Cell, FIntPoint Direction) const
@@ -301,7 +431,6 @@ bool UChunkyRoomGenerator::HasFloorNeighbor(FIntPoint Cell, FIntPoint Direction)
 	return GetCellState(Neighbor) == EGridCellType::ECT_FloorMesh;
 }
 
-#pragma region Wall Generation Helpers
 TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCells() const
 {
 	TArray<FIntPoint> PerimeterCells;
@@ -350,9 +479,132 @@ TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCells() const
 	return PerimeterCells;
 }
 
+FIntPoint UChunkyRoomGenerator::GetDirectionOffset(EWallEdge Direction) const
+{
+	switch (Direction)
+	{
+	case EWallEdge::North:  return FIntPoint(1, 0);   // +X (North)
+	case EWallEdge::South:  return FIntPoint(-1, 0);  // -X (South)
+	case EWallEdge:: East:   return FIntPoint(0, 1);   // +Y (East)
+	case EWallEdge::West:   return FIntPoint(0, -1);  // -Y (West)
+	default:  return FIntPoint:: ZeroValue;
+	}
+}
+
+FVector UChunkyRoomGenerator:: CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell,
+    int32 ModuleFootprint, float NorthOffset, float SouthOffset, float EastOffset, float WestOffset) const
+{
+    FVector Position = FVector:: ZeroVector;
+
+    // StartCell is a FLOOR cell at the edge
+    // Calculate center of the module span
+    float HalfFootprint = (ModuleFootprint - 1) * 0.5f;
+
+    // Coordinate system: +X=North, +Y=East
+    // Wall mesh Y-axis = length of wall
+    // Offsets are applied PERPENDICULAR to the wall's length
+    
+    switch (Direction)
+    {
+        case EWallEdge::North:
+            // Wall at NORTH edge (+X boundary)
+            // Wall extends along Y-axis (East-West)
+            // Offset is applied on X-axis (perpendicular to wall length)
+            Position. X = (StartCell.X + 1) * CellSize + NorthOffset;  // ← Offset on X-axis
+            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f);
+            break;
+
+        case EWallEdge:: South:
+            // Wall at SOUTH edge (-X boundary)
+            // Wall extends along Y-axis (East-West)
+            // Offset is applied on X-axis (perpendicular to wall length)
+            Position.X = StartCell.X * CellSize + SouthOffset;  // ← Offset on X-axis
+            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f);
+            break;
+
+        case EWallEdge::East:
+            // Wall at EAST edge (+Y boundary)
+            // Wall extends along X-axis (North-South)
+            // Offset is applied on Y-axis (perpendicular to wall length)
+            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f);
+            Position.Y = (StartCell.Y + 1) * CellSize + EastOffset;  // ← Offset on Y-axis
+            break;
+
+        case EWallEdge:: West:
+            // Wall at WEST edge (-Y boundary)
+            // Wall extends along X-axis (North-South)
+            // Offset is applied on Y-axis (perpendicular to wall length)
+            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f);
+            Position.Y = StartCell.Y * CellSize + WestOffset;  // ← Offset on Y-axis
+            break;
+    }
+
+    Position.Z = 0.0f;  // Floor level
+
+    return Position;
+}
+
+TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCellsForEdge(EWallEdge Edge) const
+{
+	TArray<FIntPoint> EdgeCells;
+
+	FIntPoint EdgeDirection = GetDirectionOffset(Edge);
+    
+	for (int32 Y = 0; Y < GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridSize.X; ++X)
+		{
+			FIntPoint FloorCell(X, Y);
+            
+			// ✅ CHANGE THIS: Use ECT_Custom instead of ECT_FloorMesh
+			if (GetCellState(FloorCell) != EGridCellType::ECT_Custom)
+				continue;
+
+			FIntPoint Neighbor = FloorCell + EdgeDirection;
+            
+			bool bIsEdge = false;
+            
+			if (! IsValidGridCoordinate(Neighbor))
+			{
+				bIsEdge = true;  // Grid boundary edge
+			}
+			else if (GetCellState(Neighbor) == EGridCellType::ECT_Void)
+			{
+				// ✅ ADD THIS: Skip if neighbor void cell has a corner
+				if (CornerOccupiedCells.Contains(Neighbor))
+				{
+					continue;  // Skip this edge - corner occupies the void cell
+				}
+                
+				bIsEdge = true;  // Void edge
+			}
+            
+			if (bIsEdge)
+			{
+				EdgeCells.Add(FloorCell);
+			}
+		}
+	}
+
+	// Sort cells (existing code...)
+	if (Edge == EWallEdge::North || Edge == EWallEdge::South)
+	{
+		EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y < B.Y; });
+	}
+	else
+	{
+		EdgeCells. Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X < B.X; });
+	}
+
+	UE_LOG(LogTemp, Verbose, TEXT("  GetPerimeterCellsForEdge(%s): Found %d edge cells"), 
+		*UEnum::GetValueAsString(Edge), EdgeCells.Num());
+
+	return EdgeCells;
+}
+
 void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
 {
-    if (! RoomData || RoomData->WallStyleData.IsNull()) return;
+	 if (! RoomData || RoomData->WallStyleData.IsNull()) return;
 
     WallData = RoomData->WallStyleData.LoadSynchronous();
     if (!WallData || WallData->AvailableWallModules. Num() == 0) return;
@@ -483,132 +735,111 @@ void UChunkyRoomGenerator::FillChunkyWallEdge(EWallEdge Edge)
     }
 }
 
-FIntPoint UChunkyRoomGenerator::GetDirectionOffset(EWallEdge Direction) const
+bool UChunkyRoomGenerator::IsVoidCornerCell(FIntPoint Cell, TArray<EWallEdge>& OutAdjacentFloorEdges) const
 {
-	switch (Direction)
+	OutAdjacentFloorEdges. Empty();
+    
+	// Cell must be void
+	if (GetCellState(Cell) != EGridCellType::ECT_Void)
+		return false;
+    
+	// Check all four cardinal directions for Custom neighbors
+	TArray<EWallEdge> DirectionsToCheck = {
+		EWallEdge::North,
+		EWallEdge::South,
+		EWallEdge::East,
+		EWallEdge::West
+	};
+    
+	for (EWallEdge Edge : DirectionsToCheck)
 	{
-	case EWallEdge::North:  return FIntPoint(1, 0);   // +X (North)
-	case EWallEdge::South:  return FIntPoint(-1, 0);  // -X (South)
-	case EWallEdge:: East:   return FIntPoint(0, 1);   // +Y (East)
-	case EWallEdge::West:   return FIntPoint(0, -1);  // -Y (West)
-	default:  return FIntPoint:: ZeroValue;
+		FIntPoint Direction = GetDirectionOffset(Edge);
+		FIntPoint Neighbor = Cell + Direction;
+        
+		// Check if neighbor is Custom (room area)
+		if (IsValidGridCoordinate(Neighbor))
+		{
+			EGridCellType NeighborState = GetCellState(Neighbor);
+			if (NeighborState == EGridCellType::ECT_Custom)
+			{
+				OutAdjacentFloorEdges.Add(Edge);
+			}
+		}
 	}
+    
+	// A corner has exactly 2 adjacent Custom neighbors
+	if (OutAdjacentFloorEdges.Num() != 2)
+		return false;
+    
+	// Check if the two Custom sides are ADJACENT (not opposite)
+	EWallEdge Edge1 = OutAdjacentFloorEdges[0];
+	EWallEdge Edge2 = OutAdjacentFloorEdges[1];
+    
+	// Opposite pairs (NOT corners - these are thin corridors):
+	if ((Edge1 == EWallEdge::North && Edge2 == EWallEdge::South) ||
+		(Edge1 == EWallEdge::South && Edge2 == EWallEdge::North) ||
+		(Edge1 == EWallEdge::East && Edge2 == EWallEdge::West) ||
+		(Edge1 == EWallEdge::West && Edge2 == EWallEdge::East))
+	{
+		return false;  // Opposite sides = corridor, not corner
+	}
+    
+	// Adjacent sides = valid interior corner
+	return true;
 }
 
-TArray<FIntPoint> UChunkyRoomGenerator::GetPerimeterCellsForEdge(EWallEdge Edge) const
+void UChunkyRoomGenerator::GenerateInteriorCorners()
 {
-    TArray<FIntPoint> EdgeCells;
+    if (!WallData || !WallData->DefaultCornerMesh. IsValid())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GenerateInteriorCorners - No corner mesh defined"));
+        return;
+    }
 
-    // Get direction offset for this edge (using correct coordinate system)
-    FIntPoint EdgeDirection = GetDirectionOffset(Edge);
-    
-    // DUAL DETECTION: Find BOTH void-adjacent floor cells AND grid boundary floor cells
-    
-    for (int32 Y = 0; Y < GridSize. Y; ++Y)
+    TSoftObjectPtr<UStaticMesh> CornerMeshPtr = WallData->DefaultCornerMesh;
+    int32 CornersPlaced = 0;
+
+    UE_LOG(LogTemp, Log, TEXT("GenerateInteriorCorners - Scanning for interior corners..."));
+
+    // Scan all VOID cells for interior corners
+    for (int32 Y = 0; Y < GridSize.Y; ++Y)
     {
         for (int32 X = 0; X < GridSize.X; ++X)
         {
-            FIntPoint FloorCell(X, Y);
-            
-            // Must be a floor cell
-            if (GetCellState(FloorCell) != EGridCellType::ECT_FloorMesh)
+            FIntPoint Cell(X, Y);
+
+            // Check if this void cell is an interior corner
+            TArray<EWallEdge> AdjacentFloorEdges;
+            if (! IsVoidCornerCell(Cell, AdjacentFloorEdges))
                 continue;
 
-            // Check neighbor in edge direction
-            FIntPoint Neighbor = FloorCell + EdgeDirection;
+            // This is an interior corner! 
+            UE_LOG(LogTemp, Verbose, TEXT("  Found interior corner at VOID cell (%d,%d)"),
+                Cell.X, Cell.Y);
+
+            // Calculate corner position (center of VOID cell)
+            FVector CornerPosition;
+            CornerPosition.X = Cell.X * CellSize + (CellSize * 0.5f);
+            CornerPosition.Y = Cell.Y * CellSize + (CellSize * 0.5f);
+            CornerPosition.Z = 0.0f;
+
+            // Create transform
+            FTransform CornerTransform(FRotator::ZeroRotator, CornerPosition, FVector:: OneVector);
+
+            // Create FPlacedCornerInfo
+            FPlacedCornerInfo CornerInfo;
+            CornerInfo.Corner = ECornerPosition::None;  // Interior corner (not a standard corner)
+            CornerInfo.Transform = CornerTransform;
+            CornerInfo. CornerMesh = CornerMeshPtr;
+
+            PlacedCornerMeshes.Add(CornerInfo);
             
-            // Edge condition:  Neighbor is OUT OF BOUNDS or VOID
-            bool bIsEdge = false;
+            // Mark this void cell as corner-occupied (block from wall placement)
+            CornerOccupiedCells. Add(Cell);
             
-            if (! IsValidGridCoordinate(Neighbor))
-            {
-                // Grid boundary edge
-                bIsEdge = true;
-            }
-            else if (GetCellState(Neighbor) == EGridCellType::ECT_Void)
-            {
-                // Void edge
-                bIsEdge = true;
-            }
-            
-            if (bIsEdge)
-            {
-                EdgeCells.Add(FloorCell);
-            }
+            CornersPlaced++;
         }
     }
 
-    // Sort cells to create a linear sequence
-    // Coordinate system: +X=North, +Y=East
-    if (Edge == EWallEdge::North || Edge == EWallEdge:: South)
-    {
-        // North/South edges run East-West, sort by Y coordinate
-        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y < B.Y; });
-    }
-    else // East or West
-    {
-        // East/West edges run North-South, sort by X coordinate
-        EdgeCells.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X < B.X; });
-    }
-
-    UE_LOG(LogTemp, Verbose, TEXT("  GetPerimeterCellsForEdge(%s): Found %d edge cells"), 
-        *UEnum::GetValueAsString(Edge), EdgeCells.Num());
-
-    return EdgeCells;
+    UE_LOG(LogTemp, Log, TEXT("GenerateInteriorCorners - Placed %d interior corners"), CornersPlaced);
 }
-
-FVector UChunkyRoomGenerator:: CalculateWallPositionForSegment(EWallEdge Direction, FIntPoint StartCell,
-    int32 ModuleFootprint, float NorthOffset, float SouthOffset, float EastOffset, float WestOffset) const
-{
-    FVector Position = FVector:: ZeroVector;
-
-    // StartCell is a FLOOR cell at the edge
-    // Calculate center of the module span
-    float HalfFootprint = (ModuleFootprint - 1) * 0.5f;
-
-    // Coordinate system: +X=North, +Y=East
-    // Wall mesh Y-axis = length of wall
-    // Offsets are applied PERPENDICULAR to the wall's length
-    
-    switch (Direction)
-    {
-        case EWallEdge::North:
-            // Wall at NORTH edge (+X boundary)
-            // Wall extends along Y-axis (East-West)
-            // Offset is applied on X-axis (perpendicular to wall length)
-            Position. X = (StartCell.X + 1) * CellSize + NorthOffset;  // ← Offset on X-axis
-            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f);
-            break;
-
-        case EWallEdge:: South:
-            // Wall at SOUTH edge (-X boundary)
-            // Wall extends along Y-axis (East-West)
-            // Offset is applied on X-axis (perpendicular to wall length)
-            Position.X = StartCell.X * CellSize + SouthOffset;  // ← Offset on X-axis
-            Position.Y = (StartCell.Y + HalfFootprint) * CellSize + (CellSize * 0.5f);
-            break;
-
-        case EWallEdge::East:
-            // Wall at EAST edge (+Y boundary)
-            // Wall extends along X-axis (North-South)
-            // Offset is applied on Y-axis (perpendicular to wall length)
-            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f);
-            Position.Y = (StartCell.Y + 1) * CellSize + EastOffset;  // ← Offset on Y-axis
-            break;
-
-        case EWallEdge:: West:
-            // Wall at WEST edge (-Y boundary)
-            // Wall extends along X-axis (North-South)
-            // Offset is applied on Y-axis (perpendicular to wall length)
-            Position.X = (StartCell.X + HalfFootprint) * CellSize + (CellSize * 0.5f);
-            Position.Y = StartCell.Y * CellSize + WestOffset;  // ← Offset on Y-axis
-            break;
-    }
-
-    Position.Z = 0.0f;  // Floor level
-
-    return Position;
-}
-#pragma endregion
-#pragma endregion
-
