@@ -1,0 +1,59 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int JumpDistance;
+int TextureWidth;
+int TextureHeight;
+
+// The mask texture input
+Texture2D<float> MaskTexture;
+
+// Buffer to store the 'nearest' point for each pixel during the JFA process
+RWStructuredBuffer<float2> NearestPoint;
+
+// Texture for storing the current SDF (read/write enabled)
+RWTexture2D<float> SDFTexture;
+
+
+#define COORD_VALID(id) ((id).x >= 0 && (id).x < TextureWidth && (id).y >= 0 && (id).y < TextureHeight)
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	if (COORD_VALID(id)) {
+		const int BufferIdx = id.y * TextureWidth + id.x;
+		const uint2 CurrentPixel = id.xy;
+	
+		//GroupMemoryBarrierWithGroupSync();
+
+		float2 BestNearestPoint = NearestPoint[BufferIdx];
+		float BestDistance = length(BestNearestPoint - CurrentPixel);
+
+		for(int y = -JumpDistance; y <= JumpDistance; y += JumpDistance) {
+			for(int x = -JumpDistance; x <= JumpDistance; x += JumpDistance) {
+				const int2 NeighborPixel = CurrentPixel + int2(x, y);
+				if (COORD_VALID(NeighborPixel)) {
+					const int NearestPointBufferIdx = NeighborPixel.y * TextureWidth + NeighborPixel.x;
+					const float2 NeighborNearestPoint = NearestPoint[NearestPointBufferIdx];
+			
+					// Check if the neighbor has a 'nearest' point
+					if (NeighborNearestPoint.x >= 0) {
+						const float Distance = length(NeighborNearestPoint - CurrentPixel);
+						if (Distance < BestDistance || BestNearestPoint.x < 0) {
+							BestDistance = Distance;
+							BestNearestPoint = NeighborNearestPoint;
+						}
+					}
+				}
+			}
+		}
+
+		//GroupMemoryBarrierWithGroupSync();
+
+		// Update the nearest point for the current pixel
+		NearestPoint[BufferIdx] = BestNearestPoint;
+	}
+}
+

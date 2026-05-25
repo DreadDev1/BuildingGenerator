@@ -1,0 +1,21 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+Texture2D<float> TexSource;
+RWTexture2D<float> TexDest;
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+#if BLIT_OP_ADD
+	TexDest[id.xy] += TexSource[id.xy];
+#elif BLIT_OP_MULTIPLY
+	TexDest[id.xy] *= TexSource[id.xy];
+#elif BLIT_OP_COPY
+	TexDest[id.xy] = TexSource[id.xy];
+#endif
+	
+}
+

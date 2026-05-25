@@ -1,0 +1,13 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Private/Common.ush"
+
+#pragma once
+
+float GetShadowColor(Texture2D SDF, SamplerState SDFSampler, float2 UV, float2 ShadowOffset) {
+	ShadowOffset = -ShadowOffset;
+	float SdfValue = Texture2DSample(SDF, SDFSampler, UV).r;
+	float OffsetSdfValue = Texture2DSample(SDF, SDFSampler, UV + ShadowOffset).r;
+	return SdfValue < 0 && OffsetSdfValue > 0;
+}

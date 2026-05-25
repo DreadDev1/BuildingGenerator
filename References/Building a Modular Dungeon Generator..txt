@@ -1,0 +1,53 @@
+﻿The Designer has some design concepts. I want to evaluate them to see how best to proceed.
+
+
+1. They want to use RoomData as the main data configuration of the dungeon. 
+Their plan is to use a DataAsset for each part of the room FloorData, WallData, DoorData, CeilingData. They have about 5 different asset packs that they will use for room creation. To make code manageable for meshes, they will use Blender to move Pivot Points so that they Snap together at their points. This will require additional testing for the Middle1 / 2 and Top Walls.
+
+
+2. MasterRoom will contain core generation logic for generating the rooms. Child classes will be created from MasterRoom, for different room styles and sizes. Designers will give guidance on what styles they want.
+MasterRoom will use Min and Max RoomSize X and Y.
+MasterRoom will pull from RoomData the Meshes for Floor, Wall, Door and Ceilings.
+
+
+3. Designers want this setup for Room Generation
+Grid Generation
+GridSize is based on 100cm CellSize
+Grid will fill randomly with meshes based on 100cm sizes. Each Cell will be claimed as occupied when filled. Remaining cells will be recalculated to randomize the remaining Meshes based on size and weight.
+
+
+4. RoomData
+Room Data will take the data from Floor, Wall, Door and Ceiling DataAssets.
+The designer will assign a number of X Y cells for a Mesh in each DataAsset. I have told the designers to use 100, 200 and 400 meshes so the rooms generate easily. 
+Designers will need to swap out floor, wall, ceiling and door meshes to change the style of the room. For example the Grid placed a 400x400 mesh. The designer may want to remove this mesh and replace it with 2 200x400 meshes or 4 200x200 meshes or 2 100x400 and 2 200x200 meshes.
+
+
+5. FloorData/ CeilingData
+The designer will assign a number of X Y cells for each Mesh added.
+Examples:  a 400x400 mesh will be 4X 4Y, a 200x400 mesh will be 2X 4 Y and so on.
+The FloorData will need to have a Rotation option for odd shaped Meshes. 
+Examples:A 200x400 mesh will use 2 Cells on the X and 4 on the Y. It may need to be rotated by 90 degrees to fit a grid cell area of 4X 2Y
+
+
+6. WallData
+The Designer has Wall meshes that are not 100 on the X. But the meshes will be set to have their Pivot Point set to BottomBackCenter. This will allow for easy 90 rotation along all walls for easier snapping.
+The Walls will be based on a 4 mesh setup. BaseMesh, MiddleMesh1, MiddleMesh2, TopMesh. 
+The wall meshes will be based on the same 100,200,400 unit size. It will be the Y and Z that we will be working with.
+The BaseMesh will have a socket that the Middle1, Middle2 and TopMesh will align to.
+
+
+The Edge cells of a Grid should be set to WallCell. This will create a cell array that walls can be set at rather than the Floor Edge.
+
+
+Corner cells of a Grid should be designated CornerCell. This will create a set point where Corners will be generated.
+
+
+With BSP algorithm, FloorCells will designate the last cell next to it as a Wall Cell. 
+
+
+ 1. RoomHeight — fixed per building, per floor, or per room style? (blocks wall stack placement)
+Room Height will be per floor. It will be easier to set the height once rather than per room.
+  2. Exterior door — one mesh or two for interior/exterior?
+We will be setting the Exterior door to the Master Room. When BuildingManager creates the walls, there will be a Room Designated as Entrance, and the BuildingManager will use that rooms Door as the Entrance to the building.
+  3. World Partition streaming — one cell per building or proximity-based?
+I need a bit of clarification on this. I am hoping that the Building can be considered a single Entity in the world. Players do not need to know its existence unless they are in that particular partition of the open world. Does this make sense?

@@ -1,0 +1,15 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+RWTexture2D<float> TexFogOfWarVisibility;
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	// Visibility map:  This is cleared out every frame in this shader
+	TexFogOfWarVisibility[id.xy] = 0;
+}
+
+

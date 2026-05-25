@@ -1,0 +1,911 @@
+//$ Copyright 2015-25, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Private/Common.ush"
+
+// Shape type enum matching C++ EDAVoxelShapeType
+#define SHAPE_TYPE_CONVEX_POLYGON 0
+#define SHAPE_TYPE_CIRCLE 1
+#define SHAPE_TYPE_WALL 2
+#define SHAPE_TYPE_CEILING_HOLE 3
+
+// Layer enum matching C++ EVoxelShapeLayer
+#define LAYER_PRIMARY_CARVE 0
+#define LAYER_ADD_GEOMETRY 1
+
+// Operation enum matching C++ EDAVoxelOperation
+#define OPERATION_SUBTRACT 0
+#define OPERATION_ADD 1
+
+// GPU shape structure matching C++ FDAVoxelShapeGPU
+struct FVoxelShapeGPU {
+	float4 Transform0;
+	float4 Transform1;
+	float4 Transform2;
+	float4 ShapeData1; // x=Type, y=Height, z=Operation, w=Layer
+	float4 ShapeData2; // x=Radius, y=LineStartX, z=LineStartY, w=LineEndX
+	float4 ShapeData3; // x=LineEndY, y=Thickness, z=Width, w=DoorOcclusionThickness
+	float4 ShapeData4; // x=HoleMinHeight, y=Eccentricity, z=EllipseRotation, w=MaterialID
+	float4 NoiseOverride1; // x=bOverrideNoise, y=NoiseAmplitude, z=NoiseScale, w=NoiseChannelSeparation
+	float4 NoiseOverride2; // x=FloorCeilingTransitionHeight, y=NoiseFloorScale, z=NoiseCeilingScale, w=NoiseOctaves
+	float4 NoiseOverride3; // xyz=NoiseOffset, w=unused
+	float4 PolygonPoints[8];
+	int NumPolygonPoints;
+	int Padding[3];
+};
+
+// GPU influence zone structure
+struct FNoiseInfluenceZoneGPU {
+	float4 Transform0;  // Transform matrix row 0
+	float4 Transform1;  // Transform matrix row 1
+	float4 Transform2;  // Transform matrix row 2
+	float4 InnerExtent; // xyz=inner box half-extent, w=bEnabled
+	float4 OuterExtent; // xyz=outer box half-extent, w=bUseEllipsoidFalloff
+	float4 Overrides;   // x=OverrideNoiseAmplitude, y=OverrideNoiseFloorScale, z=OverrideNoiseScale, w=unused
+	float4 OverrideFlags; // x=bOverrideAmplitude, y=bOverrideFloorScale, z=bOverrideScale, w=bOverrideScaleVector
+	float4 OverrideNoiseScaleVector; // xyz=scale vector for directional stretching, w=unused
+};
+
+// Parameters
+int3 ChunkCoord;
+int3 VoxelMin;
+int3 VoxelMax;
+float VoxelSize;
+float CeilingHeightOffset;
+float WallThickness;
+
+// Noise parameters
+float3 NoiseOffset;
+float NoiseAmplitude;
+float NoiseScale;
+float NoiseChannelSeparation;
+float FloorCeilingTransitionHeight;
+float NoiseFloorScale;
+float NoiseCeilingScale;
+int NoiseOctaves;
+
+// Noise scaling parameters
+float3 NoiseScaleVector;
+
+// Domain warp parameters
+uint bEnableDomainWarp;
+float DomainWarpStrength;
+
+// SDF Model type (0=Cave, 1=Island)
+int SDFModelType;
+
+// Island-specific parameters
+float WaterLevel;
+float ShoreSlope;
+float ShorelineFalloffDistance;
+float MaxShoreDepth;
+float ShoreDepthCutoff;
+
+// Floating Island specific params
+float FloatingIsland_PlatformDepth;
+float FloatingIsland_SurfaceZ;
+float FloatingIsland_ExpStrength;
+float3 FloatingIsland_TipLocation;
+float FloatingIsland_CurlAnglePerMeterRad;
+
+// 3D Noise texture
+Texture3D<float4> NoiseTexture;
+SamplerState NoiseTextureSampler;
+
+// Shape buffer (all shapes in one buffer, sorted by layer)
+int NumShapes;
+StructuredBuffer<FVoxelShapeGPU> ShapeBuffer;
+
+// Influence zone buffer
+int NumInfluenceZones;
+StructuredBuffer<FNoiseInfluenceZoneGPU> InfluenceZoneBuffer;
+
+// Output buffers
+RWBuffer<float> DensityBuffer;
+RWBuffer<uint> MaterialBuffer;
+
+// Transform world position to shape's local space
+float3 TransformToLocal(float3 WorldPos, float4 Transform0, float4 Transform1, float4 Transform2) {
+	float3x3 Matrix = float3x3(
+		Transform0.xyz,
+		Transform1.xyz,
+		Transform2.xyz
+	);
+	float3 Translation = float3(Transform0.w, Transform1.w, Transform2.w);
+	
+	float det = determinant(Matrix);
+	if (abs(det) < 0.0001f) {
+		return float3(0, 0, 0);
+	}
+	
+	// Calculate the inverse matrix 
+	float3x3 Cofactor;
+	Cofactor[0][0] = Matrix[1][1] * Matrix[2][2] - Matrix[1][2] * Matrix[2][1];
+	Cofactor[1][0] = -(Matrix[1][0] * Matrix[2][2] - Matrix[1][2] * Matrix[2][0]);
+	Cofactor[2][0] = Matrix[1][0] * Matrix[2][1] - Matrix[1][1] * Matrix[2][0];
+	
+	Cofactor[0][1] = -(Matrix[0][1] * Matrix[2][2] - Matrix[0][2] * Matrix[2][1]);
+	Cofactor[1][1] = Matrix[0][0] * Matrix[2][2] - Matrix[0][2] * Matrix[2][0];
+	Cofactor[2][1] = -(Matrix[0][0] * Matrix[2][1] - Matrix[0][1] * Matrix[2][0]);
+	
+	Cofactor[0][2] = Matrix[0][1] * Matrix[1][2] - Matrix[0][2] * Matrix[1][1];
+	Cofactor[1][2] = -(Matrix[0][0] * Matrix[1][2] - Matrix[0][2] * Matrix[1][0]);
+	Cofactor[2][2] = Matrix[0][0] * Matrix[1][1] - Matrix[0][1] * Matrix[1][0];
+	
+	float3x3 InvMatrix = transpose(Cofactor) / det;
+	
+	float3 LocalPos = mul(InvMatrix, WorldPos - Translation);
+	return LocalPos;
+}
+
+float CalculatePolygonSDF(FVoxelShapeGPU Shape, float3 LocalPos) {
+	float ZBottom = 0.0f;
+	float ZTop = Shape.ShapeData1.y; // Height only, no offset
+	float ZBoxSDF = max(ZBottom - LocalPos.z, LocalPos.z - ZTop);
+	
+	float2 LocalPos2D = LocalPos.xy;
+	
+	if (Shape.NumPolygonPoints == 4) {
+		bool bIsAxisAligned = true;
+		float MinX = 1e10f, MaxX = -1e10f, MinY = 1e10f, MaxY = -1e10f;
+		
+		for (int i = 0; i < 4; i++) {
+			float2 P1 = Shape.PolygonPoints[i].xy;
+			float2 P2 = Shape.PolygonPoints[(i + 1) % 4].xy;
+			
+			// Check if edge is axis-aligned
+			if (abs(P1.x - P2.x) > 0.01f && abs(P1.y - P2.y) > 0.01f) {
+				bIsAxisAligned = false;
+			}
+			
+			MinX = min(MinX, P1.x);
+			MaxX = max(MaxX, P1.x);
+			MinY = min(MinY, P1.y);
+			MaxY = max(MaxY, P1.y);
+		}
+		
+		if (bIsAxisAligned) {
+			// 2D box SDF
+			float DX = max(MinX - LocalPos2D.x, LocalPos2D.x - MaxX);
+			float DY = max(MinY - LocalPos2D.y, LocalPos2D.y - MaxY);
+			float2 OutsideDist = max(float2(DX, DY), 0.0f);
+			float InsideDist = min(max(DX, DY), 0.0f);
+			float PolygonSDF = length(OutsideDist) + InsideDist;
+			return max(PolygonSDF, ZBoxSDF);
+		}
+		
+		float MinDistSq = 1e10f;
+		bool bInside = true;
+		
+		float SignedArea = 0.0f;
+		for (int j = 0; j < 4; j++) {
+			float2 P1 = Shape.PolygonPoints[j].xy;
+			float2 P2 = Shape.PolygonPoints[(j + 1) % 4].xy;
+			SignedArea += (P1.x * P2.y - P2.x * P1.y);
+		}
+		bool bCounterClockwise = SignedArea < 0.0f; // Negative area - CCW
+		
+		for (int i = 0; i < 4; i++) {
+			float2 P1 = Shape.PolygonPoints[i].xy;
+			float2 P2 = Shape.PolygonPoints[(i + 1) % 4].xy;
+			
+			float2 Edge = P2 - P1;
+			float2 ToPoint = LocalPos2D - P1;
+			
+			// Check which side of edge we're on
+			float CrossProduct = Edge.x * ToPoint.y - Edge.y * ToPoint.x;
+			// CCW polygons: point is outside if cross product > 0
+			// CW polygons: point is outside if cross product < 0
+			if ((bCounterClockwise && CrossProduct > 0) || (!bCounterClockwise && CrossProduct < 0)) {
+				bInside = false;
+			}
+			
+			float EdgeLengthSq = dot(Edge, Edge);
+			if (EdgeLengthSq > 0.0001f) {
+				float T = saturate(dot(ToPoint, Edge) / EdgeLengthSq);
+				float2 Closest = P1 + T * Edge;
+				float2 Diff = LocalPos2D - Closest;
+				MinDistSq = min(MinDistSq, dot(Diff, Diff));
+			}
+		}
+		
+		float MinDist2D = sqrt(MinDistSq);
+		float PolygonSDF = bInside ? -MinDist2D : MinDist2D;
+		
+		return max(PolygonSDF, ZBoxSDF);
+	}
+	
+	float MinDistSq = 1e10f;
+	bool bInside = true;
+	
+	float SignedArea = 0.0f;
+	for (int j = 0; j < Shape.NumPolygonPoints; j++) {
+		float2 P1 = Shape.PolygonPoints[j].xy;
+		float2 P2 = Shape.PolygonPoints[(j + 1) % Shape.NumPolygonPoints].xy;
+		SignedArea += (P1.x * P2.y - P2.x * P1.y);
+	}
+	bool bCounterClockwise = SignedArea < 0.0f; // Negative area means CCW
+	
+	for (int i = 0; i < Shape.NumPolygonPoints; i++) {
+		float2 P1 = Shape.PolygonPoints[i].xy;
+		float2 P2 = Shape.PolygonPoints[(i + 1) % Shape.NumPolygonPoints].xy;
+		
+		float2 Edge = P2 - P1;
+		float2 ToPoint = LocalPos2D - P1;
+		
+		float CrossProduct = Edge.x * ToPoint.y - Edge.y * ToPoint.x;
+		// CCW polygons: point is outside if cross product > 0
+		// CW polygons: point is outside if cross product < 0
+		if ((bCounterClockwise && CrossProduct > 0) || (!bCounterClockwise && CrossProduct < 0)) {
+			bInside = false;
+		}
+		
+		// Calculate squared distance to edge segment
+		float EdgeLengthSq = dot(Edge, Edge);
+		if (EdgeLengthSq > 0.0001f) {
+			float T = saturate(dot(ToPoint, Edge) / EdgeLengthSq);
+			float2 Closest = P1 + T * Edge;
+			float2 Diff = LocalPos2D - Closest;
+			MinDistSq = min(MinDistSq, dot(Diff, Diff));
+		}
+	}
+	
+	float MinDist2D = sqrt(MinDistSq);
+	float PolygonSDF = bInside ? -MinDist2D : MinDist2D;
+	
+	return max(PolygonSDF, ZBoxSDF);
+}
+
+float CalculateCircleSDF(FVoxelShapeGPU Shape, float3 LocalPos) {
+	float Radius = Shape.ShapeData2.x;
+	float RadialDist = length(LocalPos.xy) - Radius;
+	
+	float ZBottom = 0.0f;
+	float ZTop = Shape.ShapeData1.y; // Height only
+	float ZBoxSDF = max(ZBottom - LocalPos.z, LocalPos.z - ZTop);
+	
+	return max(RadialDist, ZBoxSDF);
+}
+
+float CalculateWallSDF(FVoxelShapeGPU Shape, float3 LocalPos) {
+	float2 LocalPos2D = LocalPos.xy;
+	
+	float2 LineStart = float2(Shape.ShapeData2.y, Shape.ShapeData2.z);
+	float2 LineEnd = float2(Shape.ShapeData2.w, Shape.ShapeData3.x);
+	float Thickness = Shape.ShapeData3.y;
+	
+	float2 LineDir = LineEnd - LineStart;
+	float LineLength = length(LineDir);
+	
+	float Dist2D = 0.0f;
+	if (LineLength > 0.01f) {
+		float2 LineNorm = LineDir / LineLength;
+		float2 ToPoint = LocalPos2D - LineStart;
+		float T = saturate(dot(ToPoint, LineNorm));
+		float2 Closest = LineStart + LineNorm * T * LineLength;
+		Dist2D = length(LocalPos2D - Closest);
+	} else {
+		Dist2D = length(LocalPos2D);
+	}
+	
+	float WallSDF2D = Dist2D - Thickness * 0.5f;
+	
+	float ZBottom = 0.0f;
+	float ZTop = Shape.ShapeData1.y; // Height only
+	float ZBoxSDF = max(ZBottom - LocalPos.z, LocalPos.z - ZTop);
+	
+	return max(WallSDF2D, ZBoxSDF);
+}
+
+float CalculateCeilingHoleSDF(FVoxelShapeGPU Shape, float3 LocalPos) {
+	float RadialDist;
+	
+	if (abs(Shape.ShapeData4.y - 1.0f) > 0.01f) { // Eccentricity != 1
+		float CosRot = cos(Shape.ShapeData4.z); // EllipseRotation
+		float SinRot = sin(Shape.ShapeData4.z);
+		
+		float RotX = LocalPos.x * CosRot - LocalPos.y * SinRot;
+		float RotY = LocalPos.x * SinRot + LocalPos.y * CosRot;
+		
+		float EllipseX = RotX / Shape.ShapeData2.x; // Radius
+		float EllipseY = RotY / (Shape.ShapeData2.x * Shape.ShapeData4.y); // Radius * Eccentricity
+		
+		RadialDist = sqrt(EllipseX * EllipseX + EllipseY * EllipseY) - 1.0f;
+		RadialDist *= Shape.ShapeData2.x; // Scale back to world units
+	} else {
+		RadialDist = length(LocalPos.xy) - Shape.ShapeData2.x; // Radius
+	}
+	
+	// Only carve above the minimum height
+	float HeightMask = Shape.ShapeData4.x - LocalPos.z; // HoleMinHeight
+	
+	return max(RadialDist, HeightMask);
+}
+
+float PerlinNoise3D_Texture(float3 p) {
+	// Sample the 3D noise texture
+	float4 noiseSample = NoiseTexture.SampleLevel(NoiseTextureSampler, p * 0.1f, 0);
+	return noiseSample.r * 2.0f - 1.0f;
+}
+
+// Noise function reimplemented in hlsl, based on the UE C++ engine implementation. See FMathPerlinHelpers::Permutation (UnrealMath.cpp)
+// random permutation of 256 numbers, repeated 2x
+static const int Permutation[512] = {
+	63, 9, 212, 205, 31, 128, 72, 59, 137, 203, 195, 170, 181, 115, 165, 40, 116, 139, 175, 225, 132, 99, 222, 2, 41, 15, 197, 93, 169, 90, 228, 43, 221, 38, 206, 204, 73, 17, 97, 10, 96, 47, 32, 138, 136, 30, 219,
+	78, 224, 13, 193, 88, 134, 211, 7, 112, 176, 19, 106, 83, 75, 217, 85, 0, 98, 140, 229, 80, 118, 151, 117, 251, 103, 242, 81, 238, 172, 82, 110, 4, 227, 77, 243, 46, 12, 189, 34, 188, 200, 161, 68, 76, 171, 194,
+	57, 48, 247, 233, 51, 105, 5, 23, 42, 50, 216, 45, 239, 148, 249, 84, 70, 125, 108, 241, 62, 66, 64, 240, 173, 185, 250, 49, 6, 37, 26, 21, 244, 60, 223, 255, 16, 145, 27, 109, 58, 102, 142, 253, 120, 149, 160,
+	124, 156, 79, 186, 135, 127, 14, 121, 22, 65, 54, 153, 91, 213, 174, 24, 252, 131, 192, 190, 202, 208, 35, 94, 231, 56, 95, 183, 163, 111, 147, 25, 67, 36, 92, 236, 71, 166, 1, 187, 100, 130, 143, 237, 178, 158,
+	104, 184, 159, 177, 52, 214, 230, 119, 87, 114, 201, 179, 198, 3, 248, 182, 39, 11, 152, 196, 113, 20, 232, 69, 141, 207, 234, 53, 86, 180, 226, 74, 150, 218, 29, 133, 8, 44, 123, 28, 146, 89, 101, 154, 220, 126,
+	155, 122, 210, 168, 254, 162, 129, 33, 18, 209, 61, 191, 199, 157, 245, 55, 164, 167, 215, 246, 144, 107, 235, 
+
+	63, 9, 212, 205, 31, 128, 72, 59, 137, 203, 195, 170, 181, 115, 165, 40, 116, 139, 175, 225, 132, 99, 222, 2, 41, 15, 197, 93, 169, 90, 228, 43, 221, 38, 206, 204, 73, 17, 97, 10, 96, 47, 32, 138, 136, 30, 219,
+	78, 224, 13, 193, 88, 134, 211, 7, 112, 176, 19, 106, 83, 75, 217, 85, 0, 98, 140, 229, 80, 118, 151, 117, 251, 103, 242, 81, 238, 172, 82, 110, 4, 227, 77, 243, 46, 12, 189, 34, 188, 200, 161, 68, 76, 171, 194,
+	57, 48, 247, 233, 51, 105, 5, 23, 42, 50, 216, 45, 239, 148, 249, 84, 70, 125, 108, 241, 62, 66, 64, 240, 173, 185, 250, 49, 6, 37, 26, 21, 244, 60, 223, 255, 16, 145, 27, 109, 58, 102, 142, 253, 120, 149, 160,
+	124, 156, 79, 186, 135, 127, 14, 121, 22, 65, 54, 153, 91, 213, 174, 24, 252, 131, 192, 190, 202, 208, 35, 94, 231, 56, 95, 183, 163, 111, 147, 25, 67, 36, 92, 236, 71, 166, 1, 187, 100, 130, 143, 237, 178, 158,
+	104, 184, 159, 177, 52, 214, 230, 119, 87, 114, 201, 179, 198, 3, 248, 182, 39, 11, 152, 196, 113, 20, 232, 69, 141, 207, 234, 53, 86, 180, 226, 74, 150, 218, 29, 133, 8, 44, 123, 28, 146, 89, 101, 154, 220, 126,
+	155, 122, 210, 168, 254, 162, 129, 33, 18, 209, 61, 191, 199, 157, 245, 55, 164, 167, 215, 246, 144, 107, 235
+};
+
+float SmoothCurve(float X)
+{
+	return X * X * X * (X * (X * 6.0f - 15.0f) + 10.0f);
+}
+float Grad3(int Hash, float X, float Y, float Z)
+{
+	switch (Hash & 15)
+	{
+		// 12 cube midpoints
+	case 0: return X + Z;
+	case 1: return X + Y;
+	case 2: return Y + Z;
+	case 3: return -X + Y;
+	case 4: return -X + Z;
+	case 5: return -X - Y;
+	case 6: return -Y + Z;
+	case 7: return X - Y;
+	case 8: return X - Z;
+	case 9: return Y - Z;
+	case 10: return -X - Z;
+	case 11: return -Y - Z;
+		// 4 vertices of regular tetrahedron
+	case 12: return X + Y;
+	case 13: return -X + Y;
+	case 14: return -Y + Z;
+	case 15: return -Y - Z;
+		// can't happen
+	default: return 0;
+	}
+}
+
+float PerlinNoise3D(float3 Location) {
+	float Xfl = floor((float)Location.x);		// LWC_TODO: Precision loss
+	float Yfl = floor((float)Location.y);
+	float Zfl = floor((float)Location.z);
+	int Xi = (int)(Xfl) & 255;
+	int Yi = (int)(Yfl) & 255;
+	int Zi = (int)(Zfl) & 255;
+	float X = Location.x - Xfl;
+	float Y = Location.y - Yfl;
+	float Z = Location.z - Zfl;
+	float Xm1 = X - 1.0f;
+	float Ym1 = Y - 1.0f;
+	float Zm1 = Z - 1.0f;
+
+	int A = Permutation[Xi] + Yi;
+	int AA = Permutation[A] + Zi;	int AB = Permutation[A + 1] + Zi;
+
+	int B = Permutation[Xi + 1] + Yi;
+	int BA = Permutation[B] + Zi;	int BB = Permutation[B + 1] + Zi;
+
+	float U = SmoothCurve(X);
+	float V = SmoothCurve(Y);
+	float W = SmoothCurve(Z);
+	
+	// Note: range is already approximately -1,1 because of the specific choice of direction vectors for the Grad3 function
+	// This analysis (http://digitalfreepen.com/2017/06/20/range-perlin-noise.html) suggests scaling by 1/sqrt(3/4) * 1/maxGradientVectorLen, but the choice of gradient vectors makes this overly conservative
+	// Scale factor of .97 is (1.0/the max values of a billion random samples); to be 100% sure about the range I also just Clamp it for now.
+	return clamp(0.97f *
+		lerp(lerp(lerp(Grad3(Permutation[AA], X, Y, Z), Grad3(Permutation[BA], Xm1, Y, Z), U),
+				 lerp(Grad3(Permutation[AB], X, Ym1, Z), Grad3(Permutation[BB], Xm1, Ym1, Z), U),
+				 V),
+			 lerp(lerp(Grad3(Permutation[AA + 1], X, Y, Zm1), Grad3(Permutation[BA + 1], Xm1, Y, Zm1), U),
+				 lerp(Grad3(Permutation[AB + 1], X, Ym1, Zm1), Grad3(Permutation[BB + 1], Xm1, Ym1, Zm1), U),
+				 V),
+			 W
+		),
+		-1.0f, 1.0f);
+}
+
+
+// Calculate influence zone falloff for a single zone
+float CalculateInfluenceZoneFalloff(float3 WorldPos, FNoiseInfluenceZoneGPU Zone) {
+	// Check if zone is enabled
+	if (Zone.InnerExtent.w < 0.5f) {
+		return 0.0f;
+	}
+	
+	// Transform world position to zone's local space
+	float3 LocalPos = TransformToLocal(WorldPos, Zone.Transform0, Zone.Transform1, Zone.Transform2);
+	
+	float3 InnerExtent = Zone.InnerExtent.xyz;
+	float3 OuterExtent = Zone.OuterExtent.xyz;
+	bool bUseEllipsoid = Zone.OuterExtent.w > 0.5f;
+	
+	float innerDist, outerDist;
+	
+	if (bUseEllipsoid) {
+		// Ellipsoid distance (normalized)
+		float3 innerNorm = abs(LocalPos) / InnerExtent;
+		float3 outerNorm = abs(LocalPos) / OuterExtent;
+		innerDist = length(innerNorm);
+		outerDist = length(outerNorm);
+	} else {
+		// Box distance (maximum axis distance)
+		float3 innerNorm = abs(LocalPos) / InnerExtent;
+		float3 outerNorm = abs(LocalPos) / OuterExtent;
+		innerDist = max(innerNorm.x, max(innerNorm.y, innerNorm.z));
+		outerDist = max(outerNorm.x, max(outerNorm.y, outerNorm.z));
+	}
+	
+	// Calculate falloff
+	if (innerDist <= 1.0f) {
+		return 1.0f; // Fully inside inner zone
+	} else if (outerDist >= 1.0f) {
+		return 0.0f; // Outside outer zone
+	} else {
+		// Smooth interpolation in falloff zone
+		// innerDist > 1.0 means we're outside inner box
+		// outerDist < 1.0 means we're inside outer box
+		// We need to map position from inner boundary (innerDist=1) to outer boundary (outerDist=1)
+		
+		if (bUseEllipsoid) {
+			float t = (innerDist - 1.0f) / (1.0f - outerDist + innerDist - 1.0f);
+			return smoothstep(1.0f, 0.0f, saturate(t));
+		} else {
+			float3 absPos = abs(LocalPos);
+			
+			float3 distFromInner = max(absPos - InnerExtent, 0.0f);
+			float maxDistFromInner = max(distFromInner.x, max(distFromInner.y, distFromInner.z));
+			
+			float3 distToOuter = max(OuterExtent - absPos, 0.0f);
+			float minDistToOuter = min(distToOuter.x, min(distToOuter.y, distToOuter.z));
+			
+			float falloffDistance = maxDistFromInner + minDistToOuter;
+			
+			float t = (falloffDistance > 0.001f) ? (maxDistFromInner / falloffDistance) : 0.0f;
+			return smoothstep(1.0f, 0.0f, saturate(t));
+		}
+	}
+}
+
+// Calculate combined influence from all zones
+float4 CalculateCombinedInfluence(float3 WorldPos, out float AmplitudeOverride, out float FloorScaleOverride, out float ScaleOverride, out float3 ScaleVectorOverride, out bool bHasScaleVectorOverride) {
+	float totalInfluence = 0.0f;
+	float accumAmplitude = 0.0f;
+	float accumFloorScale = 0.0f;
+	float accumScale = 0.0f;
+	float3 accumScaleVector = float3(0.0f, 0.0f, 0.0f);
+	
+	bool bHasAmplitudeOverride = false;
+	bool bHasFloorScaleOverride = false;
+	bool bHasScaleOverride = false;
+	bHasScaleVectorOverride = false;
+	
+	// Initialize outputs
+	AmplitudeOverride = -1.0f;
+	FloorScaleOverride = -1.0f;
+	ScaleOverride = -1.0f;
+	ScaleVectorOverride = float3(1.0f, 1.0f, 1.0f);
+	
+	for (int i = 0; i < NumInfluenceZones; i++) {
+		FNoiseInfluenceZoneGPU Zone = InfluenceZoneBuffer[i];
+		float influence = CalculateInfluenceZoneFalloff(WorldPos, Zone);
+		
+		if (influence > 0.0f) {
+			totalInfluence += influence;
+			
+			// Accumulate weighted overrides
+			if (Zone.OverrideFlags.x > 0.5f) { // bOverrideNoiseAmplitude
+				accumAmplitude += Zone.Overrides.x * influence;
+				bHasAmplitudeOverride = true;
+			}
+			if (Zone.OverrideFlags.y > 0.5f) { // bOverrideNoiseFloorScale
+				accumFloorScale += Zone.Overrides.y * influence;
+				bHasFloorScaleOverride = true;
+			}
+			if (Zone.OverrideFlags.z > 0.5f) { // bOverrideNoiseScale
+				accumScale += Zone.Overrides.z * influence;
+				bHasScaleOverride = true;
+			}
+			if (Zone.OverrideFlags.w > 0.5f) { // bOverrideNoiseScaleVector
+				accumScaleVector += Zone.OverrideNoiseScaleVector.xyz * influence;
+				bHasScaleVectorOverride = true;
+			}
+		}
+	}
+	
+	// Calculate weighted averages if we have overrides
+	if (totalInfluence > 0.0f) {
+		if (bHasAmplitudeOverride) {
+			AmplitudeOverride = accumAmplitude / totalInfluence;
+		}
+		if (bHasFloorScaleOverride) {
+			FloorScaleOverride = accumFloorScale / totalInfluence;
+		}
+		if (bHasScaleOverride) {
+			ScaleOverride = accumScale / totalInfluence;
+		}
+		if (bHasScaleVectorOverride) {
+			ScaleVectorOverride = accumScaleVector / totalInfluence;
+		}
+	}
+	
+	return saturate(totalInfluence);
+}
+
+float3 SimpleFBM(float3 Position, float Scale, int Octaves) {
+	float3 result = float3(0, 0, 0);
+	float amp = 1.0f;
+	float freq = 1.0f;
+	float3 pos = Position / Scale;
+	
+	for (int i = 0; i < Octaves; i++) {
+		float3 xPos = pos * freq + float3(0, 0, 0);
+		result.x += PerlinNoise3D(xPos) * amp;
+		
+		float3 yPos = pos * freq + float3(123.456, 234.567, 345.678);
+		result.y += PerlinNoise3D(yPos) * amp;
+		
+		float3 zPos = pos * freq + float3(456.789, 567.890, 678.901);
+		result.z += PerlinNoise3D(zPos) * amp;
+		
+		amp *= 0.5f;
+		freq *= 2.0f;
+	}
+	
+	return result;
+}
+
+float3 ApplyDomainWarp(float3 Position, float Scale, int Octaves) {
+	if (bEnableDomainWarp == 0 || DomainWarpStrength <= 0.0f) {
+		return Position;
+	}
+	
+	float3 warpOffset = SimpleFBM(Position, Scale, Octaves);
+	
+	return Position + warpOffset * DomainWarpStrength * Scale;
+}
+
+float3 CalculateNoiseVector(float3 WorldPos, FVoxelShapeGPU Shape) {
+	float zoneAmplitudeOverride, zoneFloorScaleOverride, zoneScaleOverride;
+	float3 zoneScaleVectorOverride;
+	bool bHasScaleVectorOverride;
+	float zoneInfluence = CalculateCombinedInfluence(WorldPos, zoneAmplitudeOverride, zoneFloorScaleOverride, zoneScaleOverride, zoneScaleVectorOverride, bHasScaleVectorOverride);
+	
+	bool bUseOverride = Shape.NoiseOverride1.x > 0.5f;
+	
+	float amplitude = bUseOverride ? Shape.NoiseOverride1.y : NoiseAmplitude;
+	float scale = bUseOverride ? Shape.NoiseOverride1.z : NoiseScale;
+	float separation = bUseOverride ? Shape.NoiseOverride1.w : NoiseChannelSeparation;
+	float floorScale = bUseOverride ? Shape.NoiseOverride2.y : NoiseFloorScale;
+	float ceilingScale = bUseOverride ? Shape.NoiseOverride2.z : NoiseCeilingScale;
+	int octaves = bUseOverride ? (int)Shape.NoiseOverride2.w : NoiseOctaves;
+	float3 offset = bUseOverride ? Shape.NoiseOverride3.xyz : NoiseOffset;
+	
+	if (zoneInfluence > 0.0f) {
+		float modifiedAmplitude = amplitude;
+		float modifiedFloorScale = floorScale;
+		float modifiedScale = scale;
+		
+		if (zoneAmplitudeOverride >= 0.0f) {
+			modifiedAmplitude = zoneAmplitudeOverride;
+		}
+		if (zoneFloorScaleOverride >= 0.0f) {
+			modifiedFloorScale = zoneFloorScaleOverride;
+		}
+		if (zoneScaleOverride >= 0.0f) {
+			modifiedScale = zoneScaleOverride;
+		}
+		
+		amplitude = lerp(amplitude, modifiedAmplitude, zoneInfluence);
+		floorScale = lerp(floorScale, modifiedFloorScale, zoneInfluence);
+		scale = lerp(scale, modifiedScale, zoneInfluence);
+	}
+	
+	if (amplitude <= 0.0f) {
+		return float3(0, 0, 0);
+	}
+	
+	float3 sampleLocation = WorldPos + offset;
+	
+	sampleLocation = ApplyDomainWarp(sampleLocation, scale, octaves);
+	
+	float3 scaleVector = NoiseScaleVector;
+	
+	if (zoneInfluence > 0.0f && bHasScaleVectorOverride) {
+		scaleVector = lerp(scaleVector, zoneScaleVectorOverride, zoneInfluence);
+	}
+	
+	float3 noiseVector = float3(0, 0, 0);
+	
+	// X component
+	float noise = 0;
+	float amp = 1;
+	float freq = 1;
+	float3 pos = (sampleLocation + float3(separation, 0, 0)) / scale;
+	for (int i = 0; i < octaves; i++) {
+		noise += PerlinNoise3D(pos * freq) * amp;
+		amp *= 0.5f;
+		freq *= 2.0f;
+	}
+	noiseVector.x = noise;
+	
+	// Y component
+	noise = 0;
+	amp = 1;
+	freq = 1;
+	pos = (sampleLocation + float3(0, separation, 0)) / scale;
+	for (int i = 0; i < octaves; i++) {
+		noise += PerlinNoise3D(pos * freq) * amp;
+		amp *= 0.5f;
+		freq *= 2.0f;
+	}
+	noiseVector.y = noise;
+	
+	// Z component
+	noise = 0;
+	amp = 1;
+	freq = 1;
+	pos = (sampleLocation + float3(0, 0, separation)) / scale;
+	for (int i = 0; i < octaves; i++) {
+		noise += PerlinNoise3D(pos * freq) * amp;
+		amp *= 0.5f;
+		freq *= 2.0f;
+	}
+	noiseVector.z = noise;
+	
+	// Apply amplitude and Z-axis scaling
+	float zNoiseScale = 1.0f;
+	
+	uint operation = (uint)Shape.ShapeData1.z;
+	if (floorScale != 1.0f || ceilingScale != 1.0f) {
+		float noiseFloorScaleFinal = (operation == OPERATION_SUBTRACT) ? floorScale : ceilingScale;
+		float noiseCeilingScaleFinal = (operation == OPERATION_SUBTRACT) ? ceilingScale : floorScale;
+		
+		float3 localPos = TransformToLocal(WorldPos, Shape.Transform0, Shape.Transform1, Shape.Transform2);
+		float heightLerp = smoothstep(0.0f, Shape.ShapeData1.y, localPos.z);
+		zNoiseScale = lerp(noiseFloorScaleFinal, noiseCeilingScaleFinal, heightLerp);
+	}
+
+	noiseVector *= scaleVector;
+	noiseVector *= amplitude;
+	
+	noiseVector.z *= zNoiseScale;
+	
+	return noiseVector;
+}
+
+float CalculateShapeSDF(FVoxelShapeGPU Shape, float3 InWorldPos) {
+	float3 WorldPos = InWorldPos;
+	float3 NoiseDisplacement = CalculateNoiseVector(WorldPos, Shape);
+	WorldPos += NoiseDisplacement;
+	
+	// Transform to local space
+	float3 LocalPos = TransformToLocal(WorldPos, Shape.Transform0, Shape.Transform1, Shape.Transform2);
+	
+	uint ShapeType = (uint)Shape.ShapeData1.x;
+	
+	// Early Z-bounds rejection for all shapes except special cases
+	if (ShapeType != SHAPE_TYPE_CEILING_HOLE) {
+		float ZBottom = 0.0f; 
+		float ZTop = Shape.ShapeData1.y + 50.0f;
+		if (LocalPos.z < ZBottom - 100.0f || LocalPos.z > ZTop + 100.0f) {
+			return 10000.0f;
+		}
+	}
+	
+	if (ShapeType == SHAPE_TYPE_CONVEX_POLYGON) {
+		return CalculatePolygonSDF(Shape, LocalPos);
+	} else if (ShapeType == SHAPE_TYPE_CIRCLE) {
+		return CalculateCircleSDF(Shape, LocalPos);
+	} else if (ShapeType == SHAPE_TYPE_WALL) {
+		return CalculateWallSDF(Shape, LocalPos);
+	} else if (ShapeType == SHAPE_TYPE_CEILING_HOLE) {
+		return CalculateCeilingHoleSDF(Shape, LocalPos);
+	}
+	
+	return 10000.0f;
+}
+
+float3 WarpBaseWorldPosition(float3 WorldPos) {
+	if (SDFModelType == 2) {
+		if (WorldPos.z >= FloatingIsland_SurfaceZ) {
+			return WorldPos;
+		}
+	
+		float SurfaceToTipDistance = FloatingIsland_SurfaceZ - FloatingIsland_TipLocation.z;
+		float SmoothStepTipToSurface = smoothstep(FloatingIsland_TipLocation.z, FloatingIsland_SurfaceZ, WorldPos.z);
+		float SmoothStepSurfaceToTip = 1 - SmoothStepTipToSurface;
+		float ScaleXY = 1;
+		float AngleZRad = 0.0f;
+		
+		if (WorldPos.z < FloatingIsland_SurfaceZ) {
+			float Exp = FloatingIsland_ExpStrength * SmoothStepSurfaceToTip;
+			ScaleXY = exp2(Exp);
+
+			float DepthFromSurface = SmoothStepSurfaceToTip * SurfaceToTipDistance;
+			float DepthFromSurfaceMeters = DepthFromSurface * 0.01;
+			AngleZRad = DepthFromSurfaceMeters * FloatingIsland_CurlAnglePerMeterRad;
+		}
+	
+		float3 TipLocation2D = float3(FloatingIsland_TipLocation.x, FloatingIsland_TipLocation.y, 0);
+	
+		WorldPos -= TipLocation2D;
+		WorldPos *= float3(ScaleXY, ScaleXY, 1);
+		{
+			float s, c;
+			sincos(AngleZRad, s, c);
+			float2 xy = float2(c * WorldPos.x - s * WorldPos.y,
+							   s * WorldPos.x + c * WorldPos.y);
+			WorldPos.xy = xy;
+		}
+		
+		WorldPos += TipLocation2D;
+	}
+
+	return WorldPos;
+}
+
+// Calculate base SDF matching CPU FVoxelLib::CalculateBaseSDF
+// Returns SDF and material ID through out parameter
+float CalculateBaseSDF(float3 WorldPos, out uint OutMaterialID) {
+	float SDF = -10000.0f;	// Default cave carve,  default to an filled world
+	if (SDFModelType == 1 || SDFModelType == 2) {
+		// Island model.  Default to an empty world
+		SDF = 10000.0f;
+	}
+	
+	OutMaterialID = 0; // Default material
+
+	WorldPos = WarpBaseWorldPosition(WorldPos);
+	
+	// Track closest shape for material assignment
+	float ClosestShapeDist = 10000.0f;
+	uint ClosestShapeMaterial = 0;
+
+	// Phase 1: Primary carving/adding (rooms, corridors, platforms)
+	for (int i = 0; i < NumShapes; i++) {
+		FVoxelShapeGPU Shape = ShapeBuffer[i];
+		uint Layer = (uint)Shape.ShapeData1.w;
+
+		if (Layer == LAYER_PRIMARY_CARVE) {
+			float ShapeSDF = CalculateShapeSDF(Shape, WorldPos);
+
+			if (SDFModelType == 0) {
+				SDF = max(SDF, -ShapeSDF);
+			}
+			else if (SDFModelType == 1 || SDFModelType == 2) {
+				SDF = min(SDF, ShapeSDF);
+			}
+			
+			// For material assignment, track which shape we're actually inside and closest to
+			if (ShapeSDF < 0 && abs(ShapeSDF) < abs(ClosestShapeDist)) {
+				ClosestShapeDist = ShapeSDF;
+				ClosestShapeMaterial = (uint)Shape.ShapeData4.w; // MaterialID from shape
+			}
+		}
+	}
+	
+	// Assign material from the closest shape we're inside
+	if (ClosestShapeDist < 0) {
+		OutMaterialID = ClosestShapeMaterial;
+	}
+
+	// Apply island-specific shoreline before secondary shapes (check CPU version)
+	if (SDFModelType == 1) {
+		// Island model
+		if (SDF > 0) {
+			if (WorldPos.z <= WaterLevel) {
+				float DistanceFromGeometry = SDF;
+				float DepthBelowWater = WaterLevel - WorldPos.z;
+
+				bool bApplyShoreline = true;
+				float FalloffAlpha = 1.0f;
+				if (ShorelineFalloffDistance > 0.0f && DistanceFromGeometry > ShorelineFalloffDistance) {
+					// Beyond falloff distance, gradually reduce shore effect
+					float ExcessDistance = DistanceFromGeometry - ShorelineFalloffDistance;
+					float FalloffRange = ShorelineFalloffDistance * 0.5f;
+					FalloffAlpha = clamp(1.0f - (ExcessDistance / FalloffRange), 0.0f, 1.0f);
+
+					// If completely beyond falloff, just return original SDF
+					if (FalloffAlpha > 0.0f) {
+						bApplyShoreline = false;
+					}
+				}
+
+				if (bApplyShoreline) {
+					// Calculate shore depth using an easing curve for natural shoreline
+					float ShoreExtent = MaxShoreDepth / ShoreSlope; // How far horizontally the shore extends
+					float NormalizedDistance = clamp(DistanceFromGeometry / ShoreExtent, 0.0f, 1.0f);
+					float EasedDistance = NormalizedDistance * NormalizedDistance * (3.0f - 2.0f * NormalizedDistance);
+
+					float ShoreDepth = EasedDistance * MaxShoreDepth;
+
+					ShoreDepth = min(ShoreDepth, MaxShoreDepth);
+
+					float ShoreHeight = WaterLevel - ShoreDepth;
+
+					float DepthFalloff = 1.0f;
+					if (DepthBelowWater > MaxShoreDepth) {
+						float FadeRange = ShoreDepthCutoff - MaxShoreDepth;
+						if (FadeRange > 0.0f) {
+							DepthFalloff = clamp(1.0f - (DepthBelowWater - MaxShoreDepth) / FadeRange, 0.0f, 1.0f);
+						}
+					}
+
+					float ShoreSDF;
+					if (WorldPos.z <= ShoreHeight) {
+						ShoreSDF = min(SDF, WorldPos.z - ShoreHeight);
+					} else {
+						ShoreSDF = WorldPos.z - ShoreHeight;
+					}
+
+					float CombinedFalloff = FalloffAlpha * DepthFalloff;
+
+					float BlendedSDF = lerp(SDF, min(SDF, ShoreSDF), CombinedFalloff);
+
+					SDF = BlendedSDF;
+				}
+			}
+			else {
+				//SDF = min(SDF, WorldPos.z);
+			}
+		}
+	}
+	
+	// Phase 2: Add geometry (walls, obstacles) - AFTER shoreline
+	for (int i = 0; i < NumShapes; i++) {
+		FVoxelShapeGPU Shape = ShapeBuffer[i];
+		uint Layer = (uint)Shape.ShapeData1.w;
+
+		if (Layer == LAYER_ADD_GEOMETRY) {
+			float ShapeSDF = CalculateShapeSDF(Shape, WorldPos);
+			uint Operation = (uint)Shape.ShapeData1.z;
+			// Match CPU logic: Add uses Min, Subtract uses Max with negation
+			if (Operation == OPERATION_ADD) {
+				// Add solid geometry - use Min
+				SDF = min(SDF, ShapeSDF);
+			} else {
+				// Subtract/carve - invert shape and use Max
+				SDF = max(SDF, -ShapeSDF);
+			}
+		}
+	}
+
+	return SDF;
+}
+
+[numthreads(8, 8, 8)]
+void VoxelDensityCS(uint3 DispatchThreadId : SV_DispatchThreadID) {
+	// Calculate voxel coordinate
+	int3 VoxelCoord = int3(VoxelMin) + int3(DispatchThreadId);
+	
+	// Check bounds
+	if (any(VoxelCoord > VoxelMax)) {
+		return;
+	}
+	
+	// Calculate linear index matching CPU layout exactly
+	// CPU: Local.Z + Local.Y * Size.Z + Local.X * Size.Y * Size.Z
+	int3 Size = VoxelMax - VoxelMin + int3(1, 1, 1);
+	int3 LocalCoord = VoxelCoord - VoxelMin;
+	uint LinearIndex = LocalCoord.z + LocalCoord.y * Size.z + LocalCoord.x * Size.y * Size.z;
+	
+	// Calculate world position
+	float3 VoxelWorldPos = float3(VoxelCoord) * VoxelSize;
+	
+	uint MaterialID = 0;
+	float FinalSDF = CalculateBaseSDF(VoxelWorldPos, MaterialID);
+
+	DensityBuffer[LinearIndex] = FinalSDF;
+	MaterialBuffer[LinearIndex] = MaterialID;
+}

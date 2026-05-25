@@ -1,0 +1,44 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Private/Common.ush"
+
+float Hash21(float2 p) {
+
+	p = frac(p * float2(532.67598, 7236.82394));
+	p += dot(p, p+float2(652.765498, 154.6523));
+	return frac(p.x * p.y);
+}
+
+
+float3 RenderTurchet(float SdfValue, float2 UV, float InTime, float NumGridCells, float GridCellScaling) {
+	SdfValue = clamp(SdfValue, 0, 1);
+	SdfValue = smoothstep(0, .15, SdfValue);
+	NumGridCells = lerp(NumGridCells, NumGridCells * GridCellScaling, SdfValue);
+	
+	UV *= NumGridCells;
+
+	float2 id = floor(UV);
+	float n = Hash21(id);
+	
+	float3 col = float3(0, 0, 0);
+	
+	UV = frac(UV) - .5;
+	float d = 0.;
+
+	if (n > 0.5) {
+		UV.x *= -1.;
+	}
+    
+	float s = UV.x > -UV.y ? 1. : -1.;// Corner selection
+    
+	float cd = length(UV-float2(.5, .5) * s);
+    
+	float w = 0.01;
+	col += smoothstep(w, -w, abs(cd - .5)-.05);
+    
+	if (UV.x > 0.49 || UV.y >= 0.49) {
+		//col += 1.;
+	}
+
+	return col;
+}

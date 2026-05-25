@@ -1,0 +1,30 @@
+﻿#include "/Engine/Public/Platform.ush"
+
+// Input texture
+Texture2D<float> InputTexture;
+SamplerState InputSampler;
+
+// Output buffer
+RWStructuredBuffer<float> OutputBuffer;
+
+// Shader parameters
+uint2 TextureSize;
+uint2 OutputSize;
+float2 TexelSize;
+
+[numthreads(8, 8, 1)]
+void MainCS(uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (ThreadId.x >= OutputSize.x || ThreadId.y >= OutputSize.y)
+		return;
+
+	// Calculate UV coordinates
+	float2 UV = (float2(ThreadId.xy) + 0.5) * TexelSize;
+
+	// Sample the texture
+	float SampleValue = InputTexture.SampleLevel(InputSampler, UV, 0).r;
+
+	// Write to output buffer
+	uint OutputIndex = ThreadId.y * OutputSize.x + ThreadId.x;
+	OutputBuffer[OutputIndex] = SampleValue;
+}

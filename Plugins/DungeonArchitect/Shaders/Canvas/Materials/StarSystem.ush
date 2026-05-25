@@ -1,0 +1,64 @@
+﻿// https://www.shadertoy.com/view/XlfGRj
+// Star Nest by Pablo Roman Andrioli
+// License: MIT
+
+
+#define formuparam 0.53
+/*
+#define iterations 17
+
+#define volsteps 20
+#define stepsize 0.1
+
+#define zoom   0.800
+#define tile   0.850
+#define speed  0.010 
+
+#define brightness 0.0015
+#define darkmatter 0.300
+#define distfading 0.730
+#define saturation 0.850
+*/
+
+
+// return RenderStarSystem(SDF, SDFSampler, UV, Time, Zoom, Tile, Speed, Brightness, DarkMatter, DistFading, Saturation, Iterations, RaymarchingSteps, RaymarchingStepSize);
+
+
+float3 RenderStarSystem(float2 UV, float InTime, float Zoom, float Tile, float Speed,
+		float Brightness, float Darkness, float DarkMatter, float DistFading, float Saturation, float Iterations, float RaymarchingSteps, float RaymarchingStepSize)
+{
+	Brightness *= 0.0015;
+	Darkness *= 0.01;
+	
+	UV = UV * 2 - float2(1, 1);
+	float3 dir=float3(UV*Zoom,1.);
+	float time=InTime*Speed + .25;
+	
+	float3 from=float3(1.,.5,0.5);
+	from+=float3(time*2.,time,-2.);
+	
+	//volumetric rendering
+	float s=0.1,fade=1.0;
+	float3 v=float3(0, 0, 0);
+	for (int r=0; r<RaymarchingSteps; r++) {
+		float3 p=from+s*dir*.5;
+		p = abs(float3(Tile, Tile, Tile) - fmod(p, float3(Tile, Tile, Tile)*2.0)); // tiling fold
+		float pa,a=pa=0.;
+		for (int i=0; i<Iterations; i++) { 
+			p=abs(p)/dot(p,p)-formuparam; // the magic formula
+			a+=abs(length(p)-pa); // absolute sum of average change
+			pa=length(p);
+		}
+		float dm=max(0.,DarkMatter-a*a*.001); //dark matter
+		a*=a*a; // add contrast
+		if (r>6) fade*=1.-dm; // dark matter, don't render near
+		//v+=float3(dm,dm*.5,0.);
+		v+=fade;
+		v+=float3(s,s*s,s*s*s*s)*a*Brightness*fade; // coloring based on distance
+		fade*=DistFading; // distance fading
+		s+=RaymarchingStepSize;
+	}
+	float len_v = length(v);
+	v=lerp(float3(len_v, len_v, len_v),v,Saturation); //color adjust
+	return v * Darkness;	
+}

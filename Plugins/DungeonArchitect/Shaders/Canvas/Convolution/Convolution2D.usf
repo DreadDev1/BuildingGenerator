@@ -1,0 +1,37 @@
+//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int TextureWidth; 
+int TextureHeight; 
+
+Texture2D<float> InTexture;
+RWTexture2D<float> OutTexture;
+
+#define COORD_VALID(id) ((id).x >= 0 && (id).x < TextureWidth && (id).y >= 0 && (id).y < TextureHeight)
+static const float Kernel[KERNEL_BUF_SIZE] = { KERNEL_VALUES };
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	float Sum = 0;
+
+	int KernelIdx = 0;
+	for (int dy = -KernelExtent; dy <= KernelExtent; dy++) {
+		for (int dx = -KernelExtent; dx <= KernelExtent; dx++) {
+			const uint2 ncoord = id.xy + uint2(dx, dy);
+			if (COORD_VALID(ncoord)) { 
+				Sum += InTexture[ncoord] * Kernel[KernelIdx];
+			}
+			KernelIdx++;
+		}
+	}
+	
+#if USE_COEFFICIENT
+	Sum *= Coefficient;
+#endif // USE_COEFFICIENT
+	
+	OutTexture[id.xy] = Sum;
+}
+

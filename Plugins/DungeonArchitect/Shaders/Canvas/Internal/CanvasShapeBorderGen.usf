@@ -1,0 +1,46 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int TextureWidth;
+int TextureHeight;
+int OffsetX;
+int OffsetY;
+
+Texture2D<float> FillTexture;
+RWTexture2D<float> BorderTexture;
+
+#define COORD_VALID(id) ((id).x >= 0 && (id).x < TextureWidth && (id).y >= 0 && (id).y < TextureHeight)
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	const uint2 Coord = id.xy + uint2(OffsetX, OffsetY);
+	if (COORD_VALID(Coord)) {
+		bool bEdgePixel = false;
+		if (FillTexture[Coord].r > 0.5) {
+			for (int dx = -1; dx <= 1; dx++) {
+				for (int dy = -1; dy <= 1; dy++) {
+					if (dx == 0 && dy == 0) continue;
+					const uint2 NCoord = Coord + int2(dx, dy);
+					if (COORD_VALID(NCoord)) {
+						const bool bOccupied = FillTexture[NCoord].r > 0.5;
+						if (!bOccupied) {
+							bEdgePixel = true;
+							break;
+						}
+					}
+				}
+				if (bEdgePixel) {
+					break;
+				}
+			}
+		}
+		
+		if (bEdgePixel) {
+			BorderTexture[Coord] = 1;
+		}
+	}
+}
+

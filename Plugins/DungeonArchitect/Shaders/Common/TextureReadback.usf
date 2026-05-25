@@ -1,0 +1,16 @@
+﻿#include "/Engine/Public/Platform.ush"
+
+Texture2D<float> SourceTexture;
+SamplerState SourceSampler;
+float2 SourceDimensions;
+
+RWTexture2D<float> OutputTexture;
+
+[numthreads(THREADGROUPSIZE_X, THREADGROUPSIZE_Y, THREADGROUPSIZE_Z)]
+void Main_CS(uint3 DispatchThreadId : SV_DispatchThreadID, uint GroupIndex : SV_GroupIndex)
+{
+	float2 ThreadID = DispatchThreadId.xy + 0.5;
+	float2 TexCoord = ThreadID / SourceDimensions;
+
+	OutputTexture[ThreadID] = SourceTexture.SampleLevel(SourceSampler, TexCoord, 0).r;
+}

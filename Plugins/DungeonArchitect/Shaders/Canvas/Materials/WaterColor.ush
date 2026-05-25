@@ -1,0 +1,66 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Private/Common.ush"
+
+#pragma once
+
+MaterialFloat Noise(float2 p, uint Octaves) {
+	return MaterialExpressionNoise(float3(p, 0), 1, 1, 0, true, Octaves, 0, 1, 2, 0, false, 1024);
+}
+
+MaterialFloat4 VectorNoise(float3 p, uint Octaves) {
+	const uint FunctionCurl = 3;
+	return MaterialExpressionVectorNoise(p, 1, FunctionCurl, false, 1024);
+}
+
+float3 GetBaseColorSDF(Texture2D SDF, SamplerState SDFSampler, float2 UV, float DistortFreq, float DistortAmp, float Time) {
+	const uint Octaves = 8;
+	float4 Offset = VectorNoise(float3(UV, Time) * DistortFreq, Octaves) * DistortAmp;
+	UV += Offset.xy;
+	return Texture2DSample(SDF, SDFSampler, UV);	// -1 to +1
+}
+
+float2 ComputeGradient(Texture2D SDF, SamplerState SDFSampler, float2 UV, float DistortFreq, float DistortAmp, float Time)
+{
+	const float TextureSize = 1024;
+	float offset = 1.0 / TextureSize;
+	//float sdfCenter = Texture2DSample(SDF, SDFSampler, UV).r;
+	float sdfRight = GetBaseColorSDF(SDF, SDFSampler, UV + float2(offset, 0.0), DistortFreq, DistortAmp, Time).r;
+	float sdfLeft = GetBaseColorSDF(SDF, SDFSampler, UV - float2(offset, 0.0), DistortFreq, DistortAmp, Time).r;
+	float sdfUp = GetBaseColorSDF(SDF, SDFSampler, UV + float2(0.0, offset), DistortFreq, DistortAmp, Time).r;
+	float sdfDown = GetBaseColorSDF(SDF, SDFSampler, UV - float2(0.0, offset), DistortFreq, DistortAmp, Time).r;
+	/*
+	float sdfRight = Texture2DSample(SDF, SDFSampler, UV + float2(offset, 0.0)).r;
+	float sdfLeft = Texture2DSample(SDF, SDFSampler, UV - float2(offset, 0.0)).r;
+	float sdfUp = Texture2DSample(SDF, SDFSampler, UV + float2(0.0, offset)).r;
+	float sdfDown = Texture2DSample(SDF, SDFSampler, UV - float2(0.0, offset)).r;
+	*/
+
+	float dx = (sdfRight - sdfLeft) / (2.0 * offset);
+	float dy = (sdfUp - sdfDown) / (2.0 * offset);
+
+	return float2(dx, dy);
+}
+
+float CalcDarkenEdgeColorValue(Texture2D SDF, SamplerState SDFSampler, float2 UV, float DistortFreq, float DistortAmp, float Time, float EdgeScale, float EdgeBias)
+{
+	const float2 gradient = ComputeGradient(SDF, SDFSampler, UV, DistortFreq, DistortAmp, Time);
+	const float edgeStrength = length(gradient); // Higher values indicate stronger edges
+
+	// Scale and bias the edge strength to control the darkening effect
+	const float darkeningAmountValue = saturate(edgeStrength * EdgeScale - EdgeBias);
+	return darkeningAmountValue;
+}
+
+
+float3 GetWaterColor(Texture2D SDF, SamplerState SDFSampler, float2 UV, float DistortFreq, float DistortAmp, float Saturation, float EdgeScale, float EdgeBias, float Time) {
+	float S = GetBaseColorSDF(SDF, SDFSampler, UV, DistortFreq, DistortAmp, Time);
+	float Value = CalcDarkenEdgeColorValue(SDF, SDFSampler, UV, DistortFreq, DistortAmp, Time, EdgeScale, EdgeBias);
+
+	///S = (S + 1) * 0.5;
+	const float HueStart = 0;
+	const float HueEnd = 1;
+	float Hue = lerp(HueStart, HueEnd, S);
+	return float3(Hue, Saturation, Value);
+}

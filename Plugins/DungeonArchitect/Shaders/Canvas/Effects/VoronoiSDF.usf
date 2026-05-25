@@ -1,0 +1,76 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int CellSize;
+int TextureWidth;
+int TextureHeight;
+
+Texture2D<float> TexSDF;
+RWTexture2D<float> TexVoronoi;
+
+float2 hash( float2 p )
+{
+	p = float2( dot(p,float2(127.1,311.7)), dot(p,float2(269.5,183.3)) );
+	return -1.0 + 2.0*frac(sin(p)*43758.5453123);
+}
+
+float2 hash01( float2 p )
+{
+	p = float2( dot(p,float2(127.1,311.7)), dot(p,float2(269.5,183.3)) );
+	return frac(sin(p)*43758.5453123);
+}
+
+float noise( in float2 p )
+{
+	const float K1 = 0.366025404; // (sqrt(3)-1)/2;
+	const float K2 = 0.211324865; // (3-sqrt(3))/6;
+
+	float2  i = floor( p + (p.x+p.y)*K1 );
+	float2  a = p - i + (i.x+i.y)*K2;
+	float m = step(a.y,a.x); 
+	float2  o = float2(m,1.0-m);
+	float2  b = a - o + K2;
+	float2  c = a - 1.0 + 2.0*K2;
+	float3  h = max( 0.5-float3(dot(a,a), dot(b,b), dot(c,c) ), 0.0 );
+	float3  n = h*h*h*h*float3( dot(a,hash(i+0.0)), dot(b,hash(i+o)), dot(c,hash(i+1.0)));
+	const float C = 70;
+	return dot( n, float3(C, C, C) );
+}
+
+
+float2 RandomDir( int2 z )
+{
+	// 2D to 1D  (feel free to replace by some other)
+	int n = z.x+z.y*11111;
+
+	// Hugo Elias hash (feel free to replace by another one)
+	n = (n<<13)^n;
+	n = (n*(n*n*15731+789221)+1376312589)>>16;
+
+	// simple random vectors
+	return float2(cos(float(n)),sin(float(n)));
+}
+
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	const float2 TexSize = float2(TextureWidth, TextureHeight); 
+	const float2 uv = id.xy / TexSize;
+
+	const float2 f2 = hash01(id.xy);
+	const float2 SiteGridCoord = id.xy + f2;
+	const float2 SitePixelF = SiteGridCoord * CellSize;
+	const int2 SitePixelCoord = int2(round(SitePixelF.x), round(SitePixelF.y));
+	
+	float sdf = abs(TexSDF[SitePixelCoord]);
+	sdf = 1 - sdf * 35;
+	sdf = max(0, 1 - pow(sdf, 2)); 
+	//sdf = smoothstep(0, 0.1, sdf) * 0.7 + 0.3;
+	float n = noise(id.xy);
+	//n = n * 0.5 + 0.5;
+	TexVoronoi[SitePixelCoord] = n < sdf ? 0 : 1;
+}
+

@@ -1,0 +1,82 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int TextureWidth;
+int TextureHeight;
+
+int2 FoWSourcePixel;
+int2 BaseOffset;
+float RadiusPixels;
+
+float SoftShadowRadius;
+int SoftShadowSamples;
+
+Texture2D<float> TexSDF;
+RWTexture2D<float> TexFogOfWarExplored;
+RWTexture2D<float> TexFogOfWarVisibility;
+
+#define COORD_VALID(id) ((id).x >= 0 && (id).x < TextureWidth && (id).y >= 0 && (id).y < TextureHeight)
+#define BUF_IDX(x, y) (clamp((x), 0, TextureWidth - 1) + clamp((y), 0, TextureHeight - 1) * TextureWidth)
+
+bool IsPointVisible(int2 Point, float2 Player, float DistanceToPlayer, uint MaxIterations) {
+	const float2 DirToPlayer = normalize(Player - float2(Point));
+	float2 PointF = float2(Point);
+	// Ray march from the pixel point to the player, skipping large values base on the SDF
+	for (int i = 0; i < MaxIterations; i++)
+	{
+		float SDF = TexSDF[Point] * max(TextureWidth, TextureHeight);
+		if (SDF > 0) {
+			// Point is outside the dungeon layout
+			return false;
+		}
+		
+		SDF = -SDF;
+		
+		if (SDF >= DistanceToPlayer) {
+			return true;
+		}
+		DistanceToPlayer -= SDF;
+		PointF += SDF * DirToPlayer;
+		Point = int2(round(PointF.x), round(PointF.y));
+	}
+	return false;
+}
+
+float2 Hash(float2 p)
+{
+	int2 ip = int2(floor(p.x * 10000.0), floor(p.y * 10000.0));
+	ip = (ip.xyxy * int4(1, 12345, 1, 12345)).xy;
+	ip = ip & int2(0x7fffffff, 0x7fffffff);
+	ip = ((ip >> 16) ^ ip);
+	float2 fp = frac(float2(ip.x, ip.y) / 0x7fffffff) * 2.0 - 1.0;
+	return fp;
+}
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id3 : SV_DispatchThreadID) {
+	uint2 id = BaseOffset + id3.xy;
+	if (COORD_VALID(id)) {
+		const float Distance = length(float2(id) - float2(FoWSourcePixel));
+		const uint MaxIterations = 15;
+		float Visiblity = 0;
+		for (int i = 0; i < SoftShadowSamples; i++) {
+			const float2 SourcePixel = FoWSourcePixel + normalize(Hash(SourcePixel)) * SoftShadowRadius;
+			if (IsPointVisible(id, SourcePixel, Distance, MaxIterations)) {
+				Visiblity++;
+			}
+		}
+		Visiblity /= SoftShadowSamples;
+		
+		if (Visiblity > 0) {
+			const float NormalizedRadius = Distance / RadiusPixels;
+			const float Light = Visiblity * max(0, 1 - NormalizedRadius * NormalizedRadius);;
+			TexFogOfWarExplored[id] = max(Light, TexFogOfWarExplored[id]);
+			TexFogOfWarVisibility[id] = max(Light, TexFogOfWarVisibility[id]);
+		}
+	}
+}
+
+

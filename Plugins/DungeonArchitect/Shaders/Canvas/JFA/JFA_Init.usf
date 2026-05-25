@@ -1,0 +1,54 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int TextureWidth;
+int TextureHeight;
+
+Texture2D<float> MaskTexture;
+Texture2D<float> BorderTexture;
+Texture2D<float> OcclusionTexture;
+RWStructuredBuffer<float2> NearestPoint;
+RWTexture2D<float> SDFTexture;
+
+#define COORD_VALID(id) ((id).x >= 0 && (id).x < TextureWidth && (id).y >= 0 && (id).y < TextureHeight)
+#define BUF_IDX(x, y) (clamp((x), 0, TextureWidth - 1) + clamp((y), 0, TextureHeight - 1) * TextureWidth)
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	SDFTexture[id.xy] = 0;
+	
+	bool bEdgePixel = false;
+	if (BorderTexture[id.xy].r > 0.5 || OcclusionTexture[id.xy].r > 0.01) {
+		bEdgePixel = true;
+	}
+	else {
+		if (MaskTexture[id.xy].r > 1e-4f) {
+			for (int dx = -1; dx <= 1; dx++) {
+				for (int dy = -1; dy <= 1; dy++) {
+					if (dx == 0 && dy == 0) continue;
+				
+					const bool bOccupied = MaskTexture[id.xy + int2(dx, dy)].r > 1e-4f;
+					if (!bOccupied) {
+						bEdgePixel = true;
+						break;
+					}
+				}
+				if (bEdgePixel) {
+					break;
+				}
+			}
+		}
+	}
+	
+	const int BufferIdx = BUF_IDX(id.x, id.y);
+	if (bEdgePixel) {
+		NearestPoint[BufferIdx] = id.xy;
+	}
+	else {
+		NearestPoint[BufferIdx] = float2(-1, -1);
+	}
+}
+

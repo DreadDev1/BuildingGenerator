@@ -1,0 +1,38 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int TextureWidth;
+int TextureHeight;
+float MaxSDFValue;
+
+// The mask texture input
+Texture2D<float> MaskTexture;
+
+// Buffer to store the 'nearest' point for each pixel during the JFA process
+RWStructuredBuffer<float2> NearestPoint;
+
+// Texture for storing the current SDF (read/write enabled)
+RWTexture2D<float> SDFTexture;
+
+#define COORD_VALID(id) ((id).x >= 0 && (id).x < TextureWidth && (id).y >= 0 && (id).y < TextureHeight)
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	if (COORD_VALID(id)) {
+		const float MaskValue = MaskTexture[id.xy].r;
+		const int BufferIdx = id.y * TextureWidth + id.x;
+	
+		// Write the SDF value, in pixels
+		if (NearestPoint[BufferIdx].r >= 0) {
+			const float Distance = length(NearestPoint[BufferIdx] - id.xy) / MaxSDFValue;
+			SDFTexture[id.xy].r = MaskValue > 1e-4f ? -Distance : Distance;
+		}
+		else {
+			SDFTexture[id.xy].r = -1;
+		}
+	}
+}
+

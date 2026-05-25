@@ -1,0 +1,55 @@
+﻿//$ Copyright 2015-24, Code Respawn Technologies Pvt Ltd - All Rights Reserved $//
+
+#include "/Engine/Public/Platform.ush"
+
+#pragma once
+
+int TextureWidth;
+int TextureHeight;
+
+// Buffer to store the 'nearest' point for each pixel during the JFA process
+RWStructuredBuffer<float2> NearestPoint;
+
+// Texture for storing the current SDF (read/write enabled)
+RWTexture2D<float> SDFTexture;
+
+#define COORD_VALID(id) ((id).x >= 0 && (id).x < TextureWidth && (id).y >= 0 && (id).y < TextureHeight)
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID) {
+	
+	if (COORD_VALID(id)) {
+		const int BufferIdx = id.y * TextureWidth + id.x;
+	
+		// Write the SDF value, in pixels
+		float2 Nearest = NearestPoint[BufferIdx];
+		if (Nearest.r >= 0) {
+			bool bEdgePixel = false;
+			for (int dy = -1; dy <= 1; dy++) {
+				for (int dx = -1; dx <= 1; dx++) {
+					if (dx == 0 && dy == 0) continue;
+					const int NBufferIdx = clamp((id.y + dy), 0, TextureHeight) * TextureWidth + clamp((id.x + dx), 0, TextureWidth);
+
+					float2 NPoint = NearestPoint[NBufferIdx];
+					if (NPoint.r < 0) {
+						continue;
+					}
+					if (Nearest.x != NPoint.x || Nearest.y != NPoint.y) {
+						bEdgePixel = true;
+						break;
+					}
+				}
+				if (bEdgePixel) {
+					break;
+				}
+			}
+			
+			SDFTexture[id.xy].r = bEdgePixel ? 1 : 0;
+		}
+		else {
+			SDFTexture[id.xy].r = -1;
+		}
+	}
+	
+}
+
