@@ -7,6 +7,9 @@
 
 class AMasterRoom;
 class ABuildingManager;
+class UBGDevLog;
+class UBGVisualizer;
+class UTextRenderComponent;
 
 UCLASS(Blueprintable, ClassGroup = "BuildingGenerator")
 class BUILDINGGENERATOR_API AFloorManager : public AActor
@@ -54,6 +57,20 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "FloorManager|Runtime")
 	TArray<TObjectPtr<AMasterRoom>> SpawnedRooms;
 
+	// ----------------------------------------------------------------
+	// Debug components
+	// ----------------------------------------------------------------
+
+	// Developer-facing logging — always compiled (survives packaging).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Debug|Components")
+	TObjectPtr<UBGDevLog> DevLog;
+
+#if WITH_EDITORONLY_DATA
+	// Designer-facing visualization — editor-only.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Debug|Components")
+	TObjectPtr<UBGVisualizer> Visualizer;
+#endif // WITH_EDITORONLY_DATA
+
 #if WITH_EDITOR
 	// ----------------------------------------------------------------
 	// Editor buttons
@@ -62,21 +79,25 @@ public:
 	// Runs validation checks and draws a debug grid overlay.
 	// No actors are spawned — safe to call at any time.
 	// Validation rules are defined in CLAUDE.md Section 9.
-	UFUNCTION(CallInEditor, Category = "FloorManager|Preview")
+	UFUNCTION(CallInEditor, Category = "Debug|Actions")
 	void PreviewLayout();
 
 	// Validates the layout then spawns all AMasterRoom actors and generates
 	// their interior geometry. Calls ABuildingManager::RequestRoomSpawn().
 	// Implemented in Step 7.
-	UFUNCTION(CallInEditor, Category = "FloorManager|Preview")
+	UFUNCTION(CallInEditor, Category = "Debug|Actions")
 	void GenerateLayout();
 
 	// Destroys all AMasterRoom actors spawned by the last GenerateLayout call.
-	UFUNCTION(CallInEditor, Category = "FloorManager|Preview")
+	UFUNCTION(CallInEditor, Category = "Debug|Actions")
 	void ClearLayout();
 
 	// Flushes all persistent debug lines and strings drawn by PreviewLayout.
-	UFUNCTION(CallInEditor, Category = "FloorManager|Preview")
+	UFUNCTION(CallInEditor, Category = "Debug|Actions")
 	void ClearPreview();
+
+	// Bound to the visualizer's text-component delegates.
+	UTextRenderComponent* CreateDebugTextComponent(FVector WorldPosition, FString Text, FColor Color, float Scale);
+	void DestroyDebugTextComponent(UTextRenderComponent* TextComp);
 #endif // WITH_EDITOR
 };

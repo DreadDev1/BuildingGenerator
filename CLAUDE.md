@@ -371,8 +371,35 @@ without any offset calculation in code.
 
 ## 9. WITH_EDITOR Conventions
 
-All debug visualization is guarded by #if WITH_EDITOR / #endif.
-Nothing in these blocks ships in a packaged build.
+All debug visualization is editor-only — nothing in these blocks ships in a packaged build.
+
+### WITH_EDITOR vs WITH_EDITORONLY_DATA — pick the right macro
+
+UHT rejects a reflected `UPROPERTY` wrapped in `#if WITH_EDITOR` with the error
+*"Properties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead."*
+The two macros are not interchangeable:
+
+- **`WITH_EDITORONLY_DATA`** — guards editor-only *data*: any `UPROPERTY`, and an entire
+  `UCLASS`/`USTRUCT`/`UENUM` whose reflected members should not exist in a packaged build.
+  Use this around editor-only fields and around editor-only reflected types.
+- **`WITH_EDITOR`** — guards editor-only *code*: function bodies, `UFUNCTION(CallInEditor)`
+  logic, and other non-data logic that only runs in the editor.
+
+Rules of thumb:
+- A reflected member (`UPROPERTY`) → always `WITH_EDITORONLY_DATA`, never `WITH_EDITOR`.
+- An editor-only class that owns reflected properties (e.g. `UBGVisualizer`) → wrap the
+  whole class in `WITH_EDITORONLY_DATA`. Its `UFUNCTION`s come along inside that block.
+- Match the `.cpp` guard to the header guard exactly. If the class definition compiles in
+  under `WITH_EDITORONLY_DATA` but its implementation is under `WITH_EDITOR`, a config where
+  the two macros diverge yields unresolved externals. `UBGVisualizer`/`.cpp` both use
+  `WITH_EDITORONLY_DATA`.
+- Any `.cpp` code that reads an editor-only property must itself be guarded
+  (`WITH_EDITORONLY_DATA` or `WITH_EDITOR`) or the packaged build won't compile.
+
+Examples in this project: `AFloorManager::Visualizer` and `AMasterRoom::Visualizer`
+(`WITH_EDITORONLY_DATA`), `AMasterRoom::PreviewRoomHeightCm` (`WITH_EDITORONLY_DATA`),
+the entire `UBGVisualizer` component (`WITH_EDITORONLY_DATA`), and the CallInEditor button
+functions below (`WITH_EDITOR` is acceptable for those since they are code, not data).
 
 AFloorManager exposes two CallInEditor buttons:
 - PreviewLayout — runs validation, draws debug grid, no actors spawned

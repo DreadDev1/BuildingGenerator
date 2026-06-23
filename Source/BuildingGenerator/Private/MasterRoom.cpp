@@ -1,9 +1,15 @@
 #include "MasterRoom.h"
 #include "BuildingMathUtils.h"
-#include "DebugLog.h"
+#include "BGDevLog.h"
+#include "RoomData.h"
 #include "WallData.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Math/RandomStream.h"
+
+#if WITH_EDITOR
+#include "BGVisualizer.h"
+#include "Components/TextRenderComponent.h"
+#endif
 
 AMasterRoom::AMasterRoom()
 {
@@ -11,12 +17,19 @@ AMasterRoom::AMasterRoom()
 	bReplicates = true;
 
 	FlavorISMC = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FlavorISMC"));
-	DebugLog   = CreateDefaultSubobject<UDebugLog>(TEXT("DebugLog"));
+	DevLog     = CreateDefaultSubobject<UBGDevLog>(TEXT("DevLog"));
 
 	// FloorISMCPool, CeilingISMCPool, and WallISMCPool are populated dynamically — one ISMC per unique mesh.
 
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
 	FlavorISMC->SetupAttachment(GetRootComponent());
+
+#if WITH_EDITOR
+	Visualizer = CreateDefaultSubobject<UBGVisualizer>(TEXT("Visualizer"));
+	Visualizer->OnCreateTextComponent.BindUObject(this, &AMasterRoom::CreateDebugTextComponent);
+	Visualizer->OnDestroyTextComponent.BindUObject(this, &AMasterRoom::DestroyDebugTextComponent);
+	Visualizer->OnRedrawRequested.BindUObject(this, &AMasterRoom::RedrawDebug);
+#endif
 }
 
 // ============================================================
@@ -34,7 +47,7 @@ void AMasterRoom::InitializeRoom(const FRoomPlacement& Placement, int32 Seed, in
 
 void AMasterRoom::GenerateRoomInterior()
 {
-	DebugLog->LogSectionHeader(TEXT("GenerateRoomInterior"));
+	DevLog->LogSectionHeader(TEXT("GenerateRoomInterior"));
 
 	BuildGrid();
 	ClassifyCells();
@@ -66,9 +79,9 @@ void AMasterRoom::BuildGrid_Implementation()
 		Cell = ECellType::Floor;
 	}
 
-	DebugLog->LogStatistic(TEXT("Grid size X"), RoomGridSize.X, EBGLogCategory::Grid);
-	DebugLog->LogStatistic(TEXT("Grid size Y"), RoomGridSize.Y, EBGLogCategory::Grid);
-	DebugLog->LogStatistic(TEXT("Total cells"), TotalCells, EBGLogCategory::Grid);
+	DevLog->LogStatistic(TEXT("Grid size X"), RoomGridSize.X, EBGLogCategory::Grid);
+	DevLog->LogStatistic(TEXT("Grid size Y"), RoomGridSize.Y, EBGLogCategory::Grid);
+	DevLog->LogStatistic(TEXT("Total cells"), TotalCells, EBGLogCategory::Grid);
 }
 
 // ============================================================
@@ -104,7 +117,7 @@ void AMasterRoom::ClassifyCells_Implementation()
 		}
 	}
 
-	DebugLog->LogImportant(TEXT("Cell classification complete"), EBGLogCategory::Grid);
+	DevLog->LogImportant(TEXT("Cell classification complete"), EBGLogCategory::Grid);
 }
 
 // ============================================================
@@ -116,14 +129,14 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
 	if (!IsValid(RoomData) || !IsValid(RoomData->FloorData))
 	{
-		DebugLog->LogCritical(TEXT("PlaceFloorMeshes: RoomData or FloorData is null"));
+		DevLog->LogCritical(TEXT("PlaceFloorMeshes: RoomData or FloorData is null"));
 		return;
 	}
 
 	const UFloorData* FloorData = RoomData->FloorData;
 	if (FloorData->FloorMeshes.IsEmpty())
 	{
-		DebugLog->LogCritical(TEXT("PlaceFloorMeshes: FloorData has no mesh entries"));
+		DevLog->LogCritical(TEXT("PlaceFloorMeshes: FloorData has no mesh entries"));
 		return;
 	}
 
@@ -134,7 +147,7 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 	}
 	if (!bHasValid)
 	{
-		DebugLog->LogCritical(TEXT("PlaceFloorMeshes: no valid static mesh found in FloorData"));
+		DevLog->LogCritical(TEXT("PlaceFloorMeshes: no valid static mesh found in FloorData"));
 		return;
 	}
 
@@ -176,7 +189,7 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 				if (IsValid(E.Mesh)) { UniformEntry = &E; break; }
 			}
 		}
-		DebugLog->LogImportant(
+		DevLog->LogImportant(
 			FString::Printf(TEXT("PlaceFloorMeshes: Uniform mode — mesh: %s"), *GetNameSafe(UniformEntry ? UniformEntry->Mesh : nullptr)),
 			EBGLogCategory::Mesh);
 	}
@@ -288,7 +301,7 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 				}
 				else
 				{
-					DebugLog->LogImportant(
+					DevLog->LogImportant(
 						FString::Printf(TEXT("PlaceFloorMeshes: cell (%d,%d) unfillable — add a 1x1 entry to FloorData"), X, Y),
 						EBGLogCategory::Mesh);
 					++SkippedCount;
@@ -297,9 +310,9 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 		}
 	}
 
-	DebugLog->LogStatistic(TEXT("Floor instances placed"),    PlacedCount,   EBGLogCategory::Mesh);
-	DebugLog->LogStatistic(TEXT("Fallback 1x1 cells"),        FallbackCount, EBGLogCategory::Mesh);
-	DebugLog->LogStatistic(TEXT("Skipped unfillable cells"),  SkippedCount,  EBGLogCategory::Mesh);
+	DevLog->LogStatistic(TEXT("Floor instances placed"),    PlacedCount,   EBGLogCategory::Mesh);
+	DevLog->LogStatistic(TEXT("Fallback 1x1 cells"),        FallbackCount, EBGLogCategory::Mesh);
+	DevLog->LogStatistic(TEXT("Skipped unfillable cells"),  SkippedCount,  EBGLogCategory::Mesh);
 }
 
 // ============================================================
@@ -311,14 +324,14 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
 	if (!IsValid(RoomData) || !IsValid(RoomData->CeilingData))
 	{
-		DebugLog->LogCritical(TEXT("PlaceCeilingMeshes: RoomData or CeilingData is null"));
+		DevLog->LogCritical(TEXT("PlaceCeilingMeshes: RoomData or CeilingData is null"));
 		return;
 	}
 
 	const UCeilingData* CeilingData = RoomData->CeilingData;
 	if (CeilingData->CeilingMeshes.IsEmpty())
 	{
-		DebugLog->LogCritical(TEXT("PlaceCeilingMeshes: CeilingData has no mesh entries"));
+		DevLog->LogCritical(TEXT("PlaceCeilingMeshes: CeilingData has no mesh entries"));
 		return;
 	}
 
@@ -329,7 +342,7 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 	}
 	if (!bHasValid)
 	{
-		DebugLog->LogCritical(TEXT("PlaceCeilingMeshes: no valid static mesh found in CeilingData"));
+		DevLog->LogCritical(TEXT("PlaceCeilingMeshes: no valid static mesh found in CeilingData"));
 		return;
 	}
 
@@ -373,7 +386,7 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 				if (IsValid(E.Mesh)) { UniformEntry = &E; break; }
 			}
 		}
-		DebugLog->LogImportant(
+		DevLog->LogImportant(
 			FString::Printf(TEXT("PlaceCeilingMeshes: Uniform mode — mesh: %s"), *GetNameSafe(UniformEntry ? UniformEntry->Mesh : nullptr)),
 			EBGLogCategory::Mesh);
 	}
@@ -482,7 +495,7 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 				}
 				else
 				{
-					DebugLog->LogImportant(
+					DevLog->LogImportant(
 						FString::Printf(TEXT("PlaceCeilingMeshes: cell (%d,%d) unfillable — add a 1x1 entry to CeilingData"), X, Y),
 						EBGLogCategory::Mesh);
 					++SkippedCount;
@@ -491,9 +504,9 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 		}
 	}
 
-	DebugLog->LogStatistic(TEXT("Ceiling instances placed"),  PlacedCount,   EBGLogCategory::Mesh);
-	DebugLog->LogStatistic(TEXT("Fallback 1x1 cells"),        FallbackCount, EBGLogCategory::Mesh);
-	DebugLog->LogStatistic(TEXT("Skipped unfillable cells"),  SkippedCount,  EBGLogCategory::Mesh);
+	DevLog->LogStatistic(TEXT("Ceiling instances placed"),  PlacedCount,   EBGLogCategory::Mesh);
+	DevLog->LogStatistic(TEXT("Fallback 1x1 cells"),        FallbackCount, EBGLogCategory::Mesh);
+	DevLog->LogStatistic(TEXT("Skipped unfillable cells"),  SkippedCount,  EBGLogCategory::Mesh);
 }
 void AMasterRoom::ApplyForcedPlacements_Implementation(){}
 void AMasterRoom::PlaceFlavorMeshes_Implementation()    {}
@@ -506,12 +519,13 @@ void AMasterRoom::SpawnDoorTriggers_Implementation()    {}
 // Converts a face + position-along-face to a grid (X, Y) cell coordinate.
 static void FaceToCell(ERoomFace Face, int32 FacePos, int32 GridW, int32 GridH, int32& OutX, int32& OutY)
 {
+	// North=+X / South=-X run along Y; East=+Y / West=-Y run along X.
 	switch (Face)
 	{
-	case ERoomFace::North: OutX = FacePos; OutY = GridH - 1; break;
-	case ERoomFace::South: OutX = FacePos; OutY = 0;         break;
-	case ERoomFace::East:  OutX = GridW - 1; OutY = FacePos; break;
-	case ERoomFace::West:  OutX = 0;         OutY = FacePos; break;
+	case ERoomFace::North: OutX = GridW - 1; OutY = FacePos; break;
+	case ERoomFace::South: OutX = 0;         OutY = FacePos; break;
+	case ERoomFace::East:  OutX = FacePos;   OutY = GridH - 1; break;
+	case ERoomFace::West:  OutX = FacePos;   OutY = 0;       break;
 	default:               OutX = 0;         OutY = 0;        break;
 	}
 }
@@ -556,14 +570,14 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
 	if (!IsValid(RoomData) || !IsValid(RoomData->WallData))
 	{
-		DebugLog->LogCritical(TEXT("PlaceWallMeshStacks: RoomData or WallData is null"));
+		DevLog->LogCritical(TEXT("PlaceWallMeshStacks: RoomData or WallData is null"));
 		return;
 	}
 
 	const UWallData* WallData = RoomData->WallData;
 	if (WallData->WallModules.IsEmpty())
 	{
-		DebugLog->LogCritical(TEXT("PlaceWallMeshStacks: WallData has no modules"));
+		DevLog->LogCritical(TEXT("PlaceWallMeshStacks: WallData has no modules"));
 		return;
 	}
 
@@ -619,14 +633,14 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 	int32 ColumnsPlaced    = 0;
 	int32 DoorCellsSkipped = 0;
 
-	// Process each of the four faces. For North/South, FacePos runs along X.
-	// For East/West, FacePos runs along Y. Corner cells at 0 and FaceLen-1 are excluded.
+	// Process each of the four faces. For North/South, FacePos runs along Y.
+	// For East/West, FacePos runs along X. Corner cells at 0 and FaceLen-1 are excluded.
 	const ERoomFace Faces[] = { ERoomFace::North, ERoomFace::South, ERoomFace::East, ERoomFace::West };
 
 	for (ERoomFace Face : Faces)
 	{
 		const bool  bNS     = (Face == ERoomFace::North || Face == ERoomFace::South);
-		const int32 FaceLen = bNS ? RoomGridSize.X : RoomGridSize.Y;
+		const int32 FaceLen = bNS ? RoomGridSize.Y : RoomGridSize.X;
 		const int32 PosMin  = 1;
 		const int32 PosMax  = FaceLen - 2;  // inclusive; corners at 0 and FaceLen-1 are Corner cells
 
@@ -694,7 +708,7 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 			const FWallModule* Mod = PickWallModule(WallData, Available, Stream);
 			if (!Mod)
 			{
-				DebugLog->LogCritical(TEXT("PlaceWallMeshStacks: no valid module found — check WallData"));
+				DevLog->LogCritical(TEXT("PlaceWallMeshStacks: no valid module found — check WallData"));
 				break;
 			}
 
@@ -735,12 +749,13 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 
 		// Yaw convention: mesh at 0° has its interior-facing corner pointing NE (+X,+Y).
 		// Each 90° CCW rotation moves to the next corner around the room.
+		// With North=+X / East=+Y: minX=South, maxX=North, minY=West, maxY=East.
 		struct FCornerDef { int32 X; int32 Y; float Yaw; };
 		const FCornerDef Corners[] = {
 			{ 0,    0,    0.f   },   // SW — interior corner faces NE
-			{ MaxX, 0,    90.f  },   // SE — interior corner faces NW
+			{ MaxX, 0,    90.f  },   // NW — interior corner faces SE
 			{ MaxX, MaxY, 180.f },   // NE — interior corner faces SW
-			{ 0,    MaxY, 270.f },   // NW — interior corner faces SE
+			{ 0,    MaxY, 270.f },   // SE — interior corner faces NW
 		};
 
 		UInstancedStaticMeshComponent* CornerISMC = GetOrCreateWallISMC(WallData->CornerMesh);
@@ -751,11 +766,11 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 		}
 	}
 
-	DebugLog->LogStatistic(TEXT("Wall stacks placed"),   StacksPlaced,     EBGLogCategory::Wall);
-	DebugLog->LogStatistic(TEXT("Door meshes placed"),   DoorsPlaced,      EBGLogCategory::Wall);
-	DebugLog->LogStatistic(TEXT("Column meshes placed"), ColumnsPlaced,    EBGLogCategory::Wall);
-	DebugLog->LogStatistic(TEXT("Corner pieces placed"), CornersPlaced,    EBGLogCategory::Wall);
-	DebugLog->LogStatistic(TEXT("Door cells skipped"),   DoorCellsSkipped, EBGLogCategory::Wall);
+	DevLog->LogStatistic(TEXT("Wall stacks placed"),   StacksPlaced,     EBGLogCategory::Wall);
+	DevLog->LogStatistic(TEXT("Door meshes placed"),   DoorsPlaced,      EBGLogCategory::Wall);
+	DevLog->LogStatistic(TEXT("Column meshes placed"), ColumnsPlaced,    EBGLogCategory::Wall);
+	DevLog->LogStatistic(TEXT("Corner pieces placed"), CornersPlaced,    EBGLogCategory::Wall);
+	DevLog->LogStatistic(TEXT("Door cells skipped"),   DoorCellsSkipped, EBGLogCategory::Wall);
 }
 
 // ============================================================
@@ -764,9 +779,10 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 
 ERoomFace AMasterRoom::GetFaceForWallCell(int32 X, int32 Y) const
 {
-	if (Y == 0)                  return ERoomFace::South;
-	if (Y == RoomGridSize.Y - 1) return ERoomFace::North;
-	if (X == 0)                  return ERoomFace::West;
+	// North=+X / South=-X on the X edges; East=+Y / West=-Y on the Y edges.
+	if (X == 0)                  return ERoomFace::South;
+	if (X == RoomGridSize.X - 1) return ERoomFace::North;
+	if (Y == 0)                  return ERoomFace::West;
 	return ERoomFace::East;
 }
 
@@ -778,13 +794,15 @@ FTransform AMasterRoom::MakeWallTransform(int32 FacePos, ERoomFace Face, int32 C
 	const float     FaceCenter = (FacePos + CellsWide * 0.5f) * CellSize;
 	const float     Yaw        = FBuildingMath::ToYawDegrees(Face);
 
+	// North=+X / South=-X sit on the X-extent planes (FaceCenter runs along Y);
+	// East=+Y / West=-Y sit on the Y-extent planes (FaceCenter runs along X).
 	FVector BasePos;
 	switch (Face)
 	{
-	case ERoomFace::West:  BasePos = FVector(0.f,                        FaceCenter, Z); break;
-	case ERoomFace::East:  BasePos = FVector(RoomGridSize.X * CellSize,  FaceCenter, Z); break;
-	case ERoomFace::South: BasePos = FVector(FaceCenter,                 0.f,        Z); break;
-	case ERoomFace::North: BasePos = FVector(FaceCenter,  RoomGridSize.Y * CellSize, Z); break;
+	case ERoomFace::South: BasePos = FVector(0.f,                        FaceCenter, Z); break;
+	case ERoomFace::North: BasePos = FVector(RoomGridSize.X * CellSize,  FaceCenter, Z); break;
+	case ERoomFace::West:  BasePos = FVector(FaceCenter,                 0.f,        Z); break;
+	case ERoomFace::East:  BasePos = FVector(FaceCenter,  RoomGridSize.Y * CellSize, Z); break;
 	default:               BasePos = FVector::ZeroVector;                                break;
 	}
 
@@ -917,7 +935,7 @@ FIntPoint AMasterRoom::ResolveRoomGridSize(FRandomStream& Stream) const
 	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
 	if (!RoomData)
 	{
-		DebugLog->LogCritical(TEXT("ResolveRoomGridSize: RoomDataAsset is null — using fallback 4x4"));
+		DevLog->LogCritical(TEXT("ResolveRoomGridSize: RoomDataAsset is null — using fallback 4x4"));
 		return FIntPoint(4, 4);
 	}
 
@@ -942,19 +960,20 @@ bool AMasterRoom::IsDoorCell(int32 X, int32 Y) const
 	{
 		const int32 Width = GetDoorWidthCells(GetEffectiveDoorData(Door));
 
+		// North=+X / South=-X edges span along Y; East=+Y / West=-Y edges span along X.
 		switch (Door.Face)
 		{
 		case ERoomFace::North:
-			if (Y == MaxY && X >= Door.CellOffset && X < Door.CellOffset + Width) return true;
-			break;
-		case ERoomFace::South:
-			if (Y == 0 && X >= Door.CellOffset && X < Door.CellOffset + Width) return true;
-			break;
-		case ERoomFace::East:
 			if (X == MaxX && Y >= Door.CellOffset && Y < Door.CellOffset + Width) return true;
 			break;
-		case ERoomFace::West:
+		case ERoomFace::South:
 			if (X == 0 && Y >= Door.CellOffset && Y < Door.CellOffset + Width) return true;
+			break;
+		case ERoomFace::East:
+			if (Y == MaxY && X >= Door.CellOffset && X < Door.CellOffset + Width) return true;
+			break;
+		case ERoomFace::West:
+			if (Y == 0 && X >= Door.CellOffset && X < Door.CellOffset + Width) return true;
 			break;
 		}
 	}
@@ -982,7 +1001,7 @@ void AMasterRoom::PreviewRoom()
 		if (IsValid(ISMC)) ISMC->ClearInstances();
 	}
 	FlavorISMC->ClearInstances();
-	DebugLog->ClearDebugDrawings();
+	if (Visualizer) Visualizer->ClearDebugDrawings();
 
 	InitializeRoom(PreviewPlacement, PreviewSeed, PreviewRoomHeightCm);
 }
@@ -1002,16 +1021,89 @@ void AMasterRoom::ClearPreview()
 		if (IsValid(ISMC)) ISMC->ClearInstances();
 	}
 	FlavorISMC->ClearInstances();
-	DebugLog->ClearDebugDrawings();
+	if (Visualizer) Visualizer->ClearDebugDrawings();
+}
+
+void AMasterRoom::RedrawDebug()
+{
+	if (!Visualizer) return;
+	Visualizer->ClearDebugDrawings();
+	DrawDebugGrid();
 }
 
 void AMasterRoom::DrawDebugGrid() const
 {
-	if (!DebugLog) return;
+	if (!Visualizer) return;
 
 	constexpr float CellSize = 100.f;
 	const FVector Origin = GetActorLocation();
 
-	DebugLog->DrawGrid(RoomGridSize, CellGrid, CellSize, Origin);
+	// Derive the editor-only overlay cell lists from current room state.
+	// Void / Occupied have no backing data until Step 12 — empty for now.
+	TArray<FIntPoint> DoorCells;
+	TArray<FIntPoint> CustomCells;
+	const TArray<FIntPoint> VoidCells;
+	const TArray<FIntPoint> OccupiedCells;
+	BuildDoorCells(DoorCells);
+	BuildCustomCells(CustomCells);
+
+	Visualizer->DrawRoomGrid(RoomGridSize, CellGrid, DoorCells, CustomCells, VoidCells, OccupiedCells, CellSize, Origin);
+
+	// Forced-empty overlays (data arrives in Step 12; exercised with empty arrays).
+	const TArray<FBGForcedEmptyRegion> ForcedEmptyRegions;
+	Visualizer->DrawForcedEmptyRegions(ForcedEmptyRegions, CellSize, Origin);
+	Visualizer->DrawForcedEmptyCells(VoidCells, CellSize, Origin);
+}
+
+void AMasterRoom::BuildDoorCells(TArray<FIntPoint>& OutCells) const
+{
+	OutCells.Reset();
+	for (int32 Y = 0; Y < RoomGridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < RoomGridSize.X; ++X)
+		{
+			if (IsDoorCell(X, Y))
+			{
+				OutCells.Emplace(X, Y);
+			}
+		}
+	}
+}
+
+void AMasterRoom::BuildCustomCells(TArray<FIntPoint>& OutCells) const
+{
+	OutCells.Reset();
+	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
+	if (!IsValid(RoomData)) return;
+
+	for (const FForcedPlacement& FP : RoomData->ForcedPlacements)
+	{
+		OutCells.Add(FP.CellPosition);
+	}
+}
+
+UTextRenderComponent* AMasterRoom::CreateDebugTextComponent(FVector WorldPosition, FString Text, FColor Color, float Scale)
+{
+	UTextRenderComponent* TextComp = NewObject<UTextRenderComponent>(this);
+	if (!TextComp) return nullptr;
+
+	TextComp->RegisterComponent();
+	TextComp->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+	TextComp->SetWorldLocation(WorldPosition);
+	TextComp->SetWorldRotation(Visualizer ? Visualizer->CoordinateTextRotation : FRotator(90.f, 180.f, 0.f)); // face up so labels read from above
+	TextComp->SetText(FText::FromString(Text));
+	TextComp->SetTextRenderColor(Color);
+	TextComp->SetWorldSize(Scale * 24.f);
+	TextComp->SetHorizontalAlignment(EHTA_Center);
+	TextComp->SetVerticalAlignment(EVRTA_TextCenter);
+	return TextComp;
+}
+
+void AMasterRoom::DestroyDebugTextComponent(UTextRenderComponent* TextComp)
+{
+	if (IsValid(TextComp))
+	{
+		TextComp->DestroyComponent();
+	}
 }
 #endif

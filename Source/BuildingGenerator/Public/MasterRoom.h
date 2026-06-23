@@ -6,9 +6,11 @@
 #include "RoomPlacement.h"
 #include "MasterRoom.generated.h"
 
-class UDebugLog;
+class UBGDevLog;
+class UBGVisualizer;
 class UInstancedStaticMeshComponent;
 class UStaticMesh;
+class UTextRenderComponent;
 
 UCLASS(Blueprintable, ClassGroup = "BuildingGenerator")
 class BUILDINGGENERATOR_API AMasterRoom : public AActor
@@ -71,11 +73,18 @@ public:
 	TArray<ECellType> CellGrid;
 
 	// ----------------------------------------------------------------
-	// Debug component
+	// Debug components
 	// ----------------------------------------------------------------
 
+	// Developer-facing logging — always compiled (survives packaging).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MasterRoom|Debug")
-	TObjectPtr<UDebugLog> DebugLog;
+	TObjectPtr<UBGDevLog> DevLog;
+
+#if WITH_EDITORONLY_DATA
+	// Designer-facing visualization — editor-only.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MasterRoom|Debug")
+	TObjectPtr<UBGVisualizer> Visualizer;
+#endif // WITH_EDITORONLY_DATA
 
 	// ----------------------------------------------------------------
 	// Exterior wall suppression (called by ABuildingManager)
@@ -146,7 +155,7 @@ protected:
 	ERoomFace GetFaceForWallCell(int32 X, int32 Y) const;
 
 	// Component-local FTransform for a BottomBackCenter-pivoted wall module.
-	// FacePos   — start position along the face (X for N/S faces, Y for E/W faces), in cell units.
+	// FacePos   — start position along the face (Y for N/S faces, X for E/W faces), in cell units.
 	// CellsWide — module width along the face in cell units.
 	// PlacementOffset — in wall-forward space (X=into-room, Y=along-face, Z=up); rotated by face yaw.
 	FTransform MakeWallTransform(int32 FacePos, ERoomFace Face, int32 CellsWide, float Z, const FVector& PlacementOffset) const;
@@ -201,7 +210,7 @@ private:
 	// ----------------------------------------------------------------
 	// In-editor preview (no PIE required)
 	// Set SizeOverride on PreviewPlacement to get a fixed grid without
-	// a RoomDataAsset. Enable bShowGrid / bShowCellStates on DebugLog.
+	// a RoomDataAsset. Enable bShowGrid / bShowCellStates on Visualizer.
 	// ----------------------------------------------------------------
 
 	UPROPERTY(EditAnywhere, Category = "MasterRoom|Debug")
@@ -217,12 +226,23 @@ private:
 #endif // WITH_EDITORONLY_DATA
 
 #if WITH_EDITOR
+	// Flushes the previous overlay and redraws with current data + toggles.
+	// Bound to UBGVisualizer::OnRedrawRequested so the Toggle* buttons work.
+	void RedrawDebug();
 	void DrawDebugGrid() const;
 
-	UFUNCTION(CallInEditor, Category = "MasterRoom|Preview")
+	// Builds the editor-only overlay cell lists derived from current state.
+	void BuildDoorCells(TArray<FIntPoint>& OutCells) const;    // -> Door (green)
+	void BuildCustomCells(TArray<FIntPoint>& OutCells) const;  // -> Custom (yellow), from RoomData ForcedPlacements
+
+	// Bound to the visualizer's text-component delegates.
+	UTextRenderComponent* CreateDebugTextComponent(FVector WorldPosition, FString Text, FColor Color, float Scale);
+	void DestroyDebugTextComponent(UTextRenderComponent* TextComp);
+
+	UFUNCTION(CallInEditor, Category = "MasterRoom|Debug", meta = (DisplayPriority = "1"))
 	void PreviewRoom();
 
-	UFUNCTION(CallInEditor, Category = "MasterRoom|Preview")
+	UFUNCTION(CallInEditor, Category = "MasterRoom|Debug", meta = (DisplayPriority = "1"))
 	void ClearPreview();
 #endif // WITH_EDITOR
 };

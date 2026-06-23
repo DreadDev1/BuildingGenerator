@@ -2,7 +2,12 @@
 #include "BuildingManager.h"
 #include "MasterRoom.h"
 #include "RoomData.h"
-#include "DrawDebugHelpers.h"
+#include "BGDevLog.h"
+
+#if WITH_EDITOR
+#include "BGVisualizer.h"
+#include "Components/TextRenderComponent.h"
+#endif
 
 AFloorManager::AFloorManager()
 {
@@ -10,6 +15,20 @@ AFloorManager::AFloorManager()
 	bReplicates = true;
 
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
+
+	DevLog = CreateDefaultSubobject<UBGDevLog>(TEXT("DevLog"));
+
+#if WITH_EDITOR
+	Visualizer = CreateDefaultSubobject<UBGVisualizer>(TEXT("Visualizer"));
+	// Floor-level grid: thin gray lines, on by default (PreviewLayout's main feature).
+	Visualizer->GridColor          = FColor(80, 80, 80);
+	Visualizer->GridLineThickness  = 1.f;
+	Visualizer->bShowGrid          = true;
+	Visualizer->bShowCoordinates   = true;
+	Visualizer->OnCreateTextComponent.BindUObject(this, &AFloorManager::CreateDebugTextComponent);
+	Visualizer->OnDestroyTextComponent.BindUObject(this, &AFloorManager::DestroyDebugTextComponent);
+	Visualizer->OnRedrawRequested.BindUObject(this, &AFloorManager::PreviewLayout);
+#endif
 }
 
 // ============================================================
@@ -50,7 +69,6 @@ void AFloorManager::PreviewLayout()
 	ClearPreview();
 
 	constexpr float CellSize = 100.f;
-	constexpr float Duration = -1.f;  // persistent — cleared by ClearPreview
 	constexpr float ZDraw    = 5.f;
 
 	const FVector FloorOrigin = GetActorLocation();
@@ -91,9 +109,10 @@ void AFloorManager::PreviewLayout()
 
 	auto DoorWorldStart = [](const FFootprint& F, const FDoorPlacement& Door) -> int32
 	{
+		// North=+X / South=-X doors run along Y; East=+Y / West=-Y doors run along X.
 		return (Door.Face == ERoomFace::North || Door.Face == ERoomFace::South)
-			? F.Origin.X + Door.CellOffset
-			: F.Origin.Y + Door.CellOffset;
+			? F.Origin.Y + Door.CellOffset
+			: F.Origin.X + Door.CellOffset;
 	};
 
 	auto GetDoorWidthCells = [](const FRoomPlacement& P, const FDoorPlacement& Door) -> int32
@@ -111,23 +130,25 @@ void AFloorManager::PreviewLayout()
 			if (B.Index == F.Index) continue;
 			bool bTouching = false;
 			bool bOverlap  = false;
+			// North=+X / South=-X adjoin along X (overlap tested on Y);
+			// East=+Y / West=-Y adjoin along Y (overlap tested on X).
 			switch (Face)
 			{
 			case ERoomFace::North:
-				bTouching = (B.Origin.Y == F.Origin.Y + F.Size.Y);
-				bOverlap  = (B.Origin.X < F.Origin.X + F.Size.X) && (B.Origin.X + B.Size.X > F.Origin.X);
-				break;
-			case ERoomFace::South:
-				bTouching = (B.Origin.Y + B.Size.Y == F.Origin.Y);
-				bOverlap  = (B.Origin.X < F.Origin.X + F.Size.X) && (B.Origin.X + B.Size.X > F.Origin.X);
-				break;
-			case ERoomFace::East:
 				bTouching = (B.Origin.X == F.Origin.X + F.Size.X);
 				bOverlap  = (B.Origin.Y < F.Origin.Y + F.Size.Y) && (B.Origin.Y + B.Size.Y > F.Origin.Y);
 				break;
-			case ERoomFace::West:
+			case ERoomFace::South:
 				bTouching = (B.Origin.X + B.Size.X == F.Origin.X);
 				bOverlap  = (B.Origin.Y < F.Origin.Y + F.Size.Y) && (B.Origin.Y + B.Size.Y > F.Origin.Y);
+				break;
+			case ERoomFace::East:
+				bTouching = (B.Origin.Y == F.Origin.Y + F.Size.Y);
+				bOverlap  = (B.Origin.X < F.Origin.X + F.Size.X) && (B.Origin.X + B.Size.X > F.Origin.X);
+				break;
+			case ERoomFace::West:
+				bTouching = (B.Origin.Y + B.Size.Y == F.Origin.Y);
+				bOverlap  = (B.Origin.X < F.Origin.X + F.Size.X) && (B.Origin.X + B.Size.X > F.Origin.X);
 				break;
 			}
 			if (bTouching && bOverlap) return B.Index;
@@ -200,12 +221,13 @@ void AFloorManager::PreviewLayout()
 			if (Door.bIsExteriorDoor)
 			{
 				bool bOnPerimeter = false;
+				// North=+X / South=-X bound the X edges; East=+Y / West=-Y bound the Y edges.
 				switch (Door.Face)
 				{
-				case ERoomFace::South: bOnPerimeter = (F.Origin.Y == 0); break;
-				case ERoomFace::North: bOnPerimeter = (F.Origin.Y + F.Size.Y == FloorGridSize.Y); break;
-				case ERoomFace::West:  bOnPerimeter = (F.Origin.X == 0); break;
-				case ERoomFace::East:  bOnPerimeter = (F.Origin.X + F.Size.X == FloorGridSize.X); break;
+				case ERoomFace::South: bOnPerimeter = (F.Origin.X == 0); break;
+				case ERoomFace::North: bOnPerimeter = (F.Origin.X + F.Size.X == FloorGridSize.X); break;
+				case ERoomFace::West:  bOnPerimeter = (F.Origin.Y == 0); break;
+				case ERoomFace::East:  bOnPerimeter = (F.Origin.Y + F.Size.Y == FloorGridSize.Y); break;
 				}
 				if (!bOnPerimeter)
 				{
@@ -247,39 +269,17 @@ void AFloorManager::PreviewLayout()
 	// Draw floor grid
 	// ----------------------------------------------------------------
 
-	const float GridW = FloorGridSize.X * CellSize;
-	const float GridH = FloorGridSize.Y * CellSize;
-
-	DrawDebugBox(World,
-		FloorOrigin + FVector(GridW * 0.5f, GridH * 0.5f, ZDraw),
-		FVector(GridW * 0.5f, GridH * 0.5f, 5.f),
-		FColor::White, true, Duration, 0, 5.f);
-
-	for (int32 X = 1; X < FloorGridSize.X; X++)
+	if (Visualizer)
 	{
-		DrawDebugLine(World,
-			FloorOrigin + FVector(X * CellSize, 0.f, ZDraw),
-			FloorOrigin + FVector(X * CellSize, GridH, ZDraw),
-			FColor(80, 80, 80), true, Duration, 0, 1.f);
-	}
-	for (int32 Y = 1; Y < FloorGridSize.Y; Y++)
-	{
-		DrawDebugLine(World,
-			FloorOrigin + FVector(0.f, Y * CellSize, ZDraw),
-			FloorOrigin + FVector(GridW, Y * CellSize, ZDraw),
-			FColor(80, 80, 80), true, Duration, 0, 1.f);
-	}
-
-	// Coordinate labels every 5 cells
-	constexpr int32 CoordStep = 5;
-	for (int32 X = 0; X < FloorGridSize.X; X += CoordStep)
-	{
-		for (int32 Y = 0; Y < FloorGridSize.Y; Y += CoordStep)
+		const FVector DrawOrigin = FloorOrigin + FVector(0.f, 0.f, ZDraw);
+		if (Visualizer->bShowGrid)
 		{
-			DrawDebugString(World,
-				FloorOrigin + FVector((X + 0.5f) * CellSize, (Y + 0.5f) * CellSize, ZDraw + 10.f),
-				FString::Printf(TEXT("%d,%d"), X, Y),
-				nullptr, FColor::Yellow, Duration);
+			Visualizer->DrawBoundaryBox(FloorGridSize, CellSize, FloorOrigin, ZDraw);
+			Visualizer->DrawGridLines(FloorGridSize, CellSize, DrawOrigin);
+		}
+		if (Visualizer->bShowCoordinates)
+		{
+			Visualizer->DrawGridCoordinates(FloorGridSize, CellSize, DrawOrigin, /*CoordStep*/ 5, /*ZOffset*/ 10.f);
 		}
 	}
 
@@ -298,28 +298,33 @@ void AFloorManager::PreviewLayout()
 			F.Origin.Y * CellSize + RH * 0.5f,
 			ZDraw + 10.f);
 
-		DrawDebugBox(World, RCenter, FVector(RW * 0.5f, RH * 0.5f, 8.f), RoomColor, true, Duration, 0, 6.f);
-		DrawDebugString(World,
-			RCenter + FVector(0.f, 0.f, 15.f),
-			FString::Printf(TEXT("[%d] %dx%d"), F.Index, F.Size.X, F.Size.Y),
-			nullptr, RoomColor, Duration);
+		if (Visualizer)
+		{
+			Visualizer->DrawBox(RCenter, FVector(RW * 0.5f, RH * 0.5f, 8.f), RoomColor, 6.f);
+			Visualizer->CreateLabel(
+				RCenter + FVector(0.f, 0.f, 15.f),
+				FString::Printf(TEXT("[%d] %dx%d"), F.Index, F.Size.X, F.Size.Y),
+				RoomColor);
+		}
 	}
 
 	// ----------------------------------------------------------------
 	// Log results
 	// ----------------------------------------------------------------
 
+	DevLog->LogSectionHeader(TEXT("PreviewLayout"));
 	if (Errors.Num() == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[FloorManager] PreviewLayout: Valid — %d room(s), FloorIndex %d"),
-			RoomPlacements.Num(), FloorIndex);
+		DevLog->LogImportant(
+			FString::Printf(TEXT("Valid — %d room(s), FloorIndex %d"), RoomPlacements.Num(), FloorIndex),
+			EBGLogCategory::Generation);
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[FloorManager] PreviewLayout: %d validation error(s):"), Errors.Num());
+		DevLog->LogCritical(FString::Printf(TEXT("PreviewLayout: %d validation error(s):"), Errors.Num()));
 		for (const FString& Err : Errors)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("  %s"), *Err);
+			DevLog->LogCritical(Err);
 		}
 	}
 }
@@ -328,7 +333,7 @@ void AFloorManager::GenerateLayout()
 {
 	if (!IsValid(OwningBuildingManager))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[FloorManager] GenerateLayout: OwningBuildingManager is not set — assign it in the Details panel"));
+		DevLog->LogCritical(TEXT("GenerateLayout: OwningBuildingManager is not set — assign it in the Details panel"));
 		return;
 	}
 
@@ -341,7 +346,7 @@ void AFloorManager::GenerateLayout()
 	{
 		if (!Placement.RoomClass)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[FloorManager] GenerateLayout: Placement has no RoomClass, skipping"));
+			DevLog->LogImportant(TEXT("GenerateLayout: Placement has no RoomClass, skipping"), EBGLogCategory::Generation);
 			continue;
 		}
 
@@ -357,8 +362,9 @@ void AFloorManager::GenerateLayout()
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[FloorManager] GenerateLayout: Spawned %d room(s) on FloorIndex %d"),
-		SpawnedRooms.Num(), FloorIndex);
+	DevLog->LogImportant(
+		FString::Printf(TEXT("GenerateLayout: Spawned %d room(s) on FloorIndex %d"), SpawnedRooms.Num(), FloorIndex),
+		EBGLogCategory::Generation);
 }
 
 void AFloorManager::ClearLayout()
@@ -375,11 +381,35 @@ void AFloorManager::ClearLayout()
 
 void AFloorManager::ClearPreview()
 {
-	UWorld* World = GetWorld();
-	if (!World) return;
+	if (Visualizer)
+	{
+		Visualizer->ClearDebugDrawings();
+	}
+}
 
-	FlushPersistentDebugLines(World);
-	FlushDebugStrings(World);
+UTextRenderComponent* AFloorManager::CreateDebugTextComponent(FVector WorldPosition, FString Text, FColor Color, float Scale)
+{
+	UTextRenderComponent* TextComp = NewObject<UTextRenderComponent>(this);
+	if (!TextComp) return nullptr;
+
+	TextComp->RegisterComponent();
+	TextComp->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+	TextComp->SetWorldLocation(WorldPosition);
+	TextComp->SetWorldRotation(Visualizer ? Visualizer->CoordinateTextRotation : FRotator(90.f, 180.f, 0.f)); // face up so labels read from above
+	TextComp->SetText(FText::FromString(Text));
+	TextComp->SetTextRenderColor(Color);
+	TextComp->SetWorldSize(Scale * 24.f);
+	TextComp->SetHorizontalAlignment(EHTA_Center);
+	TextComp->SetVerticalAlignment(EVRTA_TextCenter);
+	return TextComp;
+}
+
+void AFloorManager::DestroyDebugTextComponent(UTextRenderComponent* TextComp)
+{
+	if (IsValid(TextComp))
+	{
+		TextComp->DestroyComponent();
+	}
 }
 
 #endif // WITH_EDITOR

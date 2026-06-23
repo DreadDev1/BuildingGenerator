@@ -10,10 +10,10 @@ class AMasterRoom;
 UENUM(BlueprintType)
 enum class ERoomFace : uint8
 {
-	North	UMETA(DisplayName = "North  (+Y)"),
-	South	UMETA(DisplayName = "South  (-Y)"),
-	East	UMETA(DisplayName = "East   (+X)"),
-	West	UMETA(DisplayName = "West   (-X)")
+	North	UMETA(DisplayName = "North  (+X)"),
+	South	UMETA(DisplayName = "South  (-X)"),
+	East	UMETA(DisplayName = "East   (+Y)"),
+	West	UMETA(DisplayName = "West   (-Y)")
 };
 
 USTRUCT(BlueprintType)

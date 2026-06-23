@@ -1,0 +1,45 @@
+Using bundled DotNet SDK version: 10.0 win-x64
+Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" BuildingGeneratorEditor Win64 Development "-project=D:/gitHubProjects/Building Gen/BuildingGenerator/BuildingGenerator.uproject" -waitmutex
+Log file: C:\Users\Kameen\AppData\Local\UnrealBuildTool\Log.txt
+Determining max actions to execute in parallel (8 physical cores, 16 logical cores)
+  Executing up to 8 processes, one per physical core
+Using 'git status' to determine working set for adaptive non-unity build (D:\gitHubProjects\Building Gen\BuildingGenerator).
+Creating makefile for BuildingGeneratorEditor (.uproject file is newer)
+UbaServer - Listening on 0.0.0.0:1345
+UHT compiled-in object format Default
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(42): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\MasterRoom.h(85): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\FloorManager.h(70): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(45): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(64): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(67): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(70): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(73): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(76): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(79): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(82): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(87): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(90): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(93): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(96): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(99): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(102): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(105): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(108): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(111): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(114): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(118): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(123): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(127): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(130): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(134): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(137): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(142): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(145): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(148): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+D:\gitHubProjects\Building Gen\BuildingGenerator\Source\BuildingGenerator\Public\BGVisualizer.h(152): Error: UProperties should not be wrapped by WITH_EDITOR, use WITH_EDITORONLY_DATA instead.
+Unhandled 1 aggregate exceptions
+
+Result: Failed (OtherCompilationError)
+Total execution time: 4.01 seconds
+Trace written to file C:\Users\Kameen\AppData\Local\UnrealBuildTool\Trace.uba with size 2.3kb
