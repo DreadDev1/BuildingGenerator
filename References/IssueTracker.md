@@ -15,6 +15,11 @@ Each entry follows the same structure: **Symptom → Root Cause → Fix → Less
 4. [EDebugLogLevel Name Collision — Reference File in Source Tree](#4-edebogloglevel-name-collision--reference-file-in-source-tree)
 5. [URoomData Name Collision — ProceduralDungeon Plugin](#5-uroomdata-name-collision--proceduraldungeon-plugin)
 6. [PlaceFloorMeshes Fallback Overflow — Multi-Cell Mesh at 1×1 Transform](#6-placefloormmeshes-fallback-overflow--multi-cell-mesh-at-11-transform)
+7. [Duplicate "Preview" Section in Details Panel](#7-duplicate-preview-section-in-details-panel)
+8. [Floor Fill Holes at Last Interior Row — AllowRotation=false Gate](#8-floor-fill-holes-at-last-interior-row--allowrotationfalse-gate)
+9. [Latent bNonSquare Gate in PlaceCeilingMeshes](#9-latent-bnonsquare-gate-in-placeceilingmeshes--ceiling-allowrotationfalse)
+10. [UHT Duplicate Type Names — DebugLog.h and BGDevLog.h](#10-uht-duplicate-type-names--deblogh-and-bgdevlogh)
+11. [Door Flanking Cell Gap — Wall Modules Missing Adjacent to Doorway](#11-door-flanking-cell-gap--wall-modules-missing-adjacent-to-doorway)
 
 ---
 
@@ -554,4 +559,134 @@ fill function) would eliminate this class of problem entirely.
 
 ---
 
-*Last updated: Step 3/3b/4 complete — EFloorFillMode (Random/Uniform), ceiling bNonSquare gate fixed (Issue 9), AllowRotation semantics, floor fill holes, UCeilingData::RoomHeightCm removed, PreviewRoomHeightCm added, duplicate Preview section resolved*
+---
+
+## 10. UHT Duplicate Type Names — DebugLog.h and BGDevLog.h
+
+**Step context**: First compile after cloning the project on a second machine (Steps 5–7 already complete on the primary machine).
+
+### Symptom
+
+```
+Error: Enum 'EBGLogCategory' shares engine name 'EBGLogCategory' with enum 'EBGLogCategory' in BGDevLog.h
+Error: Struct 'FBGPerformanceLog' shares engine name 'FBGPerformanceLog' with struct 'FBGPerformanceLog' in BGDevLog.h
+```
+
+### Root Cause
+
+`DebugLog.h` and `DebugLog.cpp` were deleted from the primary development machine as
+part of a refactor that migrated all logging functionality to `BGDevLog` and all editor
+visualization to `BGVisualizer`. However, those deletions were not committed to the
+repository — the files survived in version control.
+
+When the project was cloned on a second machine, both `DebugLog.h` (containing the
+original `EBGLogCategory` and `FBGPerformanceLog` declarations) and `BGDevLog.h`
+(containing the replacement declarations with the same reflected names) were present.
+UHT processes every header in the module and registers reflected types globally — two
+headers with the same `UENUM`/`USTRUCT` name are a hard collision.
+
+### Diagnosis
+
+Before deleting, confirmed that the migration was complete:
+- All logging call sites used `DevLog->LogImportant(...)` (not `DebugLog->...`)
+- `DebugLog.cpp` included only `DebugLog.h` — no other file included `DebugLog.h`
+- `BGDevLog.h` and `BGVisualizer.h` fully replaced all functionality from `DebugLog.h`
+
+### Fix
+
+Deleted `Source/BuildingGenerator/Public/DebugLog.h` and
+`Source/BuildingGenerator/Private/DebugLog.cpp` from the project.
+
+### Lesson
+
+File deletions must be committed. Deleting a file locally without staging the deletion
+leaves it in version control, so anyone who clones or pulls gets the file back. After
+deleting source files that are part of a refactor, always verify with `git status` that
+the deletion is staged before committing.
+
+---
+
+## 11. Door Flanking Cell Gap — Wall Modules Missing Adjacent to Doorway
+
+**Step context**: Discovered during Step 5–7 testing with a `UDoorData` asset that had no `ColumnMesh` assigned.
+
+### Symptom
+
+When a door was placed with no `ColumnMesh` set on the `UDoorData`, the two wall cells
+immediately flanking the door opening (one cell to each side) were visibly empty. Wall
+modules were placed on every other wall cell, but the cells at `CellOffset-1` and
+`CellOffset+DoorWidth` always showed gaps.
+
+### Root Cause
+
+`PlaceWallMeshStacks_Implementation` uses a `FindColumnForPos` lambda to check whether
+a wall position is reserved as a column cell. The original implementation returned a
+`FDoorPlacement*` for **any** door at that flanking position, regardless of whether
+`ColumnMesh` was set:
+
+```cpp
+// Original — always reserved flanking cells for any door
+auto FindColumnForPos = [&](ERoomFace CurFace, int32 FacePos) -> const FDoorPlacement*
+{
+    for (const FDoorPlacement& Door : ActivePlacement.Doors)
+    {
+        if (Door.Face != CurFace) continue;
+        const UDoorData* DData = GetEffectiveDoorData(Door);
+        if (!IsValid(DData)) continue;
+        const int32 Width = GetDoorWidthCells(DData);
+        if (FacePos == Door.CellOffset - 1 || FacePos == Door.CellOffset + Width)
+            return &Door;   // ← returned regardless of ColumnMesh
+    }
+    return nullptr;
+};
+```
+
+When `FindColumnForPos` returned non-null, Branch 1 of the wall placement loop consumed
+the cell and skipped it. But Branch 1 then checked `if (IsValid(DData->ColumnMesh))` before
+placing — so the cell was consumed (preventing wall module placement) but nothing was
+placed. The result: a permanently empty flanking cell for every door without a column mesh.
+
+### Fix
+
+Added `UDoorData::bUseColumns = false` (default). `FindColumnForPos` was changed to skip
+any door where `!DData->bUseColumns`:
+
+```cpp
+auto FindColumnForPos = [&](ERoomFace CurFace, int32 FacePos) -> const FDoorPlacement*
+{
+    for (const FDoorPlacement& Door : ActivePlacement.Doors)
+    {
+        if (Door.Face != CurFace) continue;
+        const UDoorData* DData = GetEffectiveDoorData(Door);
+        if (!IsValid(DData) || !DData->bUseColumns) continue;  // ← opt-in guard added
+        const int32 Width = GetDoorWidthCells(DData);
+        if (FacePos == Door.CellOffset - 1 || FacePos == Door.CellOffset + Width)
+            return &Door;
+    }
+    return nullptr;
+};
+```
+
+Branch 1 retained its null guard for `ColumnMesh` (handles `bUseColumns=true` + null mesh
+without crashing). The null guard was already present; this issue confirmed it must stay.
+
+**Behavior table:**
+
+| `bUseColumns` | `ColumnMesh` | Flanking cell result |
+|---|---|---|
+| `false` (default) | any | Normal wall module from WallData |
+| `true` | set | ColumnMesh placed |
+| `true` | null | Cell reserved, left empty |
+
+### Lesson
+
+"Reserved because something might go there" is not the same as "reserved because something
+will go there." The original code reserved flanking cells unconditionally, which silently
+made column placement mandatory for correct behavior. Any flag that changes a cell from
+"passthrough" to "reserved" should be opt-in, not opt-out — default behavior should be
+the most permissive case (fill the cell with wall modules) and the designer explicitly
+enables the restriction (`bUseColumns = true`) when they need it.
+
+---
+
+*Last updated: Steps 5–7 complete. Issues 10 and 11 added — UHT DebugLog duplicate (resolved by deleting legacy files), door flanking cell gap (resolved by bUseColumns opt-in on UDoorData).*

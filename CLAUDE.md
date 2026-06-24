@@ -149,8 +149,9 @@ URoomData
 |---|---|---|
 | DoorMesh | UStaticMesh* | placed spanning DoorWidth cells via MakeWallTransform |
 | FrameMesh | UStaticMesh* | optional |
-| ColumnMesh | UStaticMesh* | placed at CellOffset-1 and CellOffset+Width (flanking cells). Both sides use the same mesh. Null = flanking cells left empty (wall modules never placed there regardless) |
+| ColumnMesh | UStaticMesh* | placed at CellOffset-1 and CellOffset+Width (flanking cells) when bUseColumns=true. Null + bUseColumns=true = flanking cells reserved but left empty |
 | DoorWidth | EDoorWidth | TwoCell (200cm) or FourCell (400cm). Controls door span and column positions |
+| bUseColumns | bool | Default false. When false, flanking cells are not reserved and receive normal wall modules from WallData. When true, flanking cells are reserved for ColumnMesh (cell left empty if ColumnMesh is null) |
 | DoorPlacementOffset | FVector | wall-forward space (X=into-room, Y=along-face, Z=up). Corrects for door mesh depth ≠ wall face. Same convention as FWallModule::PlacementOffset |
 | ColumnPlacementOffset | FVector | same convention, applied to ColumnMesh only. Set independently from DoorPlacementOffset |
 | CollisionBoxExtent | FVector | trigger box size |
@@ -514,10 +515,13 @@ if (Target.bBuildEditor)
   Multiple doors on one room are handled entirely by the FDoorPlacement array — no
   separate bMultipleDoors flag is needed. **DECIDED during door implementation.**
 
-- **Column mesh behavior**: Flanking cells (CellOffset-1 and CellOffset+DoorWidth) are
-  always reserved — wall modules are never placed there regardless of whether ColumnMesh
-  is set. If ColumnMesh is null the cell is left empty. This was the fix for 4-cell
-  doorways showing wall segments. **DECIDED during door bug fix.**
+- **Column mesh behavior**: Controlled by `UDoorData::bUseColumns` (default false).
+  When false, flanking cells (CellOffset-1 and CellOffset+DoorWidth) are not reserved —
+  the bin-pack run treats them as normal wall cells. When true, flanking cells are reserved:
+  ColumnMesh is placed if set, cell is left empty if null.
+  Default is false so a door-only setup (no ColumnMesh) fills flanking gaps with wall modules
+  automatically. **UPDATED: bUseColumns added after original always-reserve behavior caused
+  empty gaps when ColumnMesh was null.**
 
 - **Column per-side yaw**: Left and right column meshes may need independent yaw overrides
   to align with corner pieces on asymmetric wall styles. Deferred — add LeftColumnYaw /

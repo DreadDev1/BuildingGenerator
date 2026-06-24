@@ -17,8 +17,12 @@ Update this document each time a step from CLAUDE.md Section 13 is completed.
 5. [Step 3 — Weighted Random Floor Fill](#5-step-3--weighted-random-floor-fill)
 6. [Step 3b — Ceiling Mesh Fill](#6-step-3b--ceiling-mesh-fill)
 7. [Step 4 — Wall Mesh Stack Placement](#7-step-4--wall-mesh-stack-placement)
-8. [System Flow Diagram](#8-system-flow-diagram)
-9. [Adding a New Developer Checklist](#9-adding-a-new-developer-checklist)
+8. [Step 5 — AFloorManager Details Panel](#8-step-5--afloormanager-details-panel)
+9. [Step 6 — PreviewLayout Debug Visualization](#9-step-6--previewlayout-debug-visualization)
+10. [Step 7 — ABuildingManager Spawning](#10-step-7--abuildingmanager-spawning)
+11. [System Flow Diagram](#11-system-flow-diagram)
+12. [Pending Investigations](#12-pending-investigations)
+13. [Adding a New Developer Checklist](#13-adding-a-new-developer-checklist)
 
 ---
 
@@ -82,24 +86,31 @@ Defines the three states a grid cell can be in after `ClassifyCells()` runs:
 | `Wall` | Edge cell (non-corner) — receives wall mesh stack or door mesh |
 | `Corner` | Corner cell — receives corner piece (no door allowed here) |
 
-This enum is shared between `AMasterRoom` (which classifies cells) and `UDebugLog`
+This enum is shared between `AMasterRoom` (which classifies cells) and `UBGVisualizer`
 (which colors cells for visualization). It lives in its own header to avoid circular
 includes — both systems include `CellTypes.h` independently.
 
 ---
 
-### 2.2 UDebugLog — Debug Component
+### 2.2 UBGDevLog + UBGVisualizer — Debug Infrastructure
 
-**Files**: `Public/DebugLog.h`, `Private/DebugLog.cpp`
+**Files**:
+- `Public/BGDevLog.h`, `Private/BGDevLog.cpp` — developer logging component
+- `Public/BGVisualizer.h`, `Private/BGVisualizer.cpp` — editor visualization component
 
-`UDebugLog` is an `ActorComponent` added to every `AMasterRoom`. It provides two independent
-systems that can be used separately:
+`UDebugLog` was refactored into two components. The split follows the principle that
+logging (which must survive packaging) and visualization (editor-only) are separate concerns.
+Both components are present on `AMasterRoom` and `AFloorManager`.
 
-#### Logging System (always available — compiles in all builds)
+---
 
-Logging is level-filtered and category-filtered. Both filters must pass for a message to appear.
+#### UBGDevLog — Developer Logging
 
-**Log levels** (`EDebugLogLevel`):
+`UBGDevLog` is an `ActorComponent` that provides filtered logging and performance profiling.
+`UE_LOG` calls compile in all builds; the on-screen overlay is gated inside `ScreenLog()`
+under `#if WITH_EDITOR`.
+
+**Log levels** (`EBGLogLevel`):
 
 | Level | Numeric | Shown for |
 |---|---|---|
@@ -109,7 +120,7 @@ Logging is level-filtered and category-filtered. Both filters must pass for a me
 | `Verbose` | 3 | Per-cell detail |
 | `Everything` | 4 | All output |
 
-`LogCritical()` is special — it bypasses `bEnableDebug` and the level filter entirely.
+`LogCritical()` bypasses `bEnableDebug` and the level filter entirely.
 Use it for conditions that should never happen (null asset pointers, missing data).
 
 **Log categories** (`EBGLogCategory`):
@@ -128,63 +139,100 @@ Use it for conditions that should never happen (null asset pointers, missing dat
 **Log methods:**
 
 ```cpp
-DebugLog->LogCritical(TEXT("RoomDataAsset is null"));
-DebugLog->LogImportant(TEXT("Grid built"), EBGLogCategory::Grid);
-DebugLog->LogVerbose(TEXT("Cell (2,3) classified as Wall"), EBGLogCategory::Grid);
-DebugLog->LogStatistic(TEXT("Total cells"), TotalCells, EBGLogCategory::Grid);
-DebugLog->LogSectionHeader(TEXT("GenerateRoomInterior"));
+DevLog->LogCritical(TEXT("RoomDataAsset is null"));
+DevLog->LogImportant(TEXT("Grid built"), EBGLogCategory::Grid);
+DevLog->LogVerbose(TEXT("Cell (2,3) classified as Wall"), EBGLogCategory::Grid);
+DevLog->LogStatistic(TEXT("Total cells"), TotalCells, EBGLogCategory::Grid);
+DevLog->LogSectionHeader(TEXT("GenerateRoomInterior"));
 ```
 
-**Screen logging**: When `bEnableScreenLogging` is true, all log calls also appear as
-on-screen debug messages via `GEngine->AddOnScreenDebugMessage()`, color-coded by level.
-
-**Performance timing:**
+**Performance profiling** (`FBGPerformanceLog`):
 
 ```cpp
-DebugLog->BeginPerformanceLog(TEXT("BuildGrid"));
+DevLog->BeginPerformanceLog(TEXT("BuildGrid"));
 // ... work ...
-DebugLog->EndPerformanceLog(TEXT("BuildGrid")); // logs "[PERF] BuildGrid completed in 0.12ms"
+DevLog->EndPerformanceLog(TEXT("BuildGrid")); // logs "[PERF] BuildGrid completed in 0.12ms"
 ```
 
-#### Visual Debug System (`#if WITH_EDITOR` only — stripped from packaged builds)
+Results are stored in `DevLog->GetPerformanceLogs()` as `TArray<FBGPerformanceLog>`.
 
-Visual methods draw persistent debug lines and boxes in the editor viewport.
-They are only compiled in editor builds and call `DrawDebugLine` / `DrawDebugBox` from
-`DrawDebugHelpers.h`.
-
-**Toggles** (exposed in the Details panel under the `Debug|Visualization` category):
-
-| Property | What it shows |
-|---|---|
-| `bShowGrid` | Grid line overlay (green lines at cell boundaries) |
-| `bShowCellStates` | Color-coded boxes per cell (blue = Floor, black = Wall, purple = Corner) |
-| `bShowCoordinates` | `(X,Y)` labels at each cell center via `UTextRenderComponent` |
-
-**Coordinate text delegate system:**
-
-`UDebugLog` does not create `UTextRenderComponent` objects itself. Instead it fires
-two delegates that the owning actor must bind:
-
-```cpp
-DebugLog->OnCreateTextComponent.BindUObject(this, &AMasterRoom::CreateCoordTextComponent);
-DebugLog->OnDestroyTextComponent.BindUObject(this, &AMasterRoom::DestroyCoordTextComponent);
-```
-
-This pattern keeps component lifetime management in the actor that owns the components,
-and keeps `UDebugLog` free of actor coupling. These bindings will be wired up when
-the `WITH_EDITOR` PreviewLayout system is built in Step 6.
-
-**Key design rule**: `ClearDebugDrawings()` calls `FlushPersistentDebugLines()` which
-clears ALL persistent debug lines in the world — not just those drawn by this component.
-Always call it before redrawing to avoid stacking.
+**Screen logging**: In editor builds, all log calls appear as on-screen debug messages
+via `GEngine->AddOnScreenDebugMessage()`, color-coded by level. The `UE_LOG` path always
+compiles — screen display is the only editor-only part.
 
 ---
 
-### 2.3 Performance Timing
+#### UBGVisualizer — Editor Visualization
 
-`FBGPerformanceLog` is a struct that records a completed timing result. After calling
-`EndPerformanceLog()`, the result is stored in `DebugLog->GetPerformanceLogs()` and can
-be queried in Blueprint or C++ for profiling the generation sequence.
+`UBGVisualizer` is an editor-only `ActorComponent`. The entire class (header and .cpp)
+is gated behind `#if WITH_EDITORONLY_DATA` — zero cost in packaged builds.
+
+**6-state display classification** (`EBGCellDisplayState`):
+
+| State | Default color | Meaning |
+|---|---|---|
+| `Empty` | Blue | Interior floor cell, no placed mesh |
+| `Occupied` | Red | Floor cell with a placed mesh (flavor, etc.) |
+| `Custom` | Yellow | Floor cell from a ForcedPlacement override |
+| `Void` | Teal | Designer-reserved empty region |
+| `Wall` | Black | Wall or Corner structural cell |
+| `Door` | Green | Wall cell within a door span |
+
+Display state is derived at draw time from the structural `ECellType` grid plus optional
+overlay cell lists (`DoorCells`, `CustomCells`, `VoidCells`, `OccupiedCells`). It is
+never stored on the grid itself.
+
+**Delegates:**
+
+| Delegate | Signature | Purpose |
+|---|---|---|
+| `OnCreateTextComponent` | `UTextRenderComponent*(FVector, FString, FColor, float)` | Owner creates and returns a text render component |
+| `OnDestroyTextComponent` | `void(UTextRenderComponent*)` | Owner destroys a specific component |
+| `OnRedrawRequested` | `void()` | Fired by toggle buttons; bound to `PreviewLayout` or `RedrawDebug` on the owner |
+
+**Room-level draw API** (used by `AMasterRoom::DrawDebugGrid`):
+
+```cpp
+Visualizer->DrawRoomGrid(
+    GridSize, StructuralCells,
+    DoorCells, CustomCells, VoidCells, OccupiedCells,
+    CellSize, OriginLocation);
+```
+
+**Primitive draw API** (used by `AFloorManager::PreviewLayout`):
+
+```cpp
+Visualizer->DrawBoundaryBox(FloorGridSize, CellSize, Origin, ZOffset);
+Visualizer->DrawGridLines(FloorGridSize, CellSize, Origin);
+Visualizer->DrawGridCoordinates(GridSize, CellSize, Origin, CoordStep, ZOffset);
+Visualizer->DrawBox(WorldCenter, Extent, Color, Thickness);
+Visualizer->DrawCellBox(GridCoord, Color, CellSize, Origin, ZOffset);
+UTextRenderComponent* Label = Visualizer->CreateLabel(WorldPos, Text, Color);
+```
+
+**Toggle buttons** (Details panel, `Debug|Toggle` category):
+
+| Button | Effect |
+|---|---|
+| `ToggleGrid` | Flip `bShowGrid`, fire `OnRedrawRequested` |
+| `ToggleCoordinates` | Flip `bShowCoordinates`, fire `OnRedrawRequested` |
+| `ToggleCellStates` | Flip `bShowCellStates`, fire `OnRedrawRequested` |
+| `ToggleForcedRegions` | Flip both `bShowForcedEmptyRegions` and `bShowForcedEmptyCells` |
+
+Pressing any toggle button fires `OnRedrawRequested`, which is bound to `PreviewLayout`
+or `RedrawDebug` on the owning actor — the view updates immediately.
+
+**Cleanup:**
+
+```cpp
+Visualizer->ClearDebugDrawings(); // FlushPersistentDebugLines + FlushDebugStrings + destroys all text components
+Visualizer->ClearTextComponents(); // text components only
+```
+
+> `ClearDebugDrawings()` calls both `FlushPersistentDebugLines()` and `FlushDebugStrings()`.
+> Both are global operations — all persistent debug draw in the scene is cleared, not just
+> what this component drew. Do not mix `AFloorManager` and `AMasterRoom` previews at the
+> same time if you need both visible simultaneously.
 
 ---
 
@@ -444,15 +492,15 @@ The smallest room that has interior floor cells is 3×3.
 
 After `GenerateRoomInterior()` finishes, `DrawDebugGrid()` is called inside `#if WITH_EDITOR`.
 It passes `RoomGridSize`, `CellGrid`, `CellSize = 100.f`, and `GetActorLocation()` to
-`DebugLog->DrawGrid()`.
+`Visualizer->DrawRoomGrid()`.
 
-What appears in the viewport is controlled entirely by the toggles on the `UDebugLog`
+What appears in the viewport is controlled entirely by the toggles on the `Visualizer`
 component in the Details panel. No recompile is needed to toggle visualization on or off —
 set the properties and call `GenerateLayout` again from `AFloorManager`.
 
 To see the grid in the editor:
 1. Place an `AMasterRoom` (or let `AFloorManager::GenerateLayout` spawn one).
-2. Select the actor, find the `DebugLog` component in the Details panel.
+2. Select the actor, find the `Visualizer` component in the Details panel.
 3. Enable `bShowGrid`, `bShowCellStates`, and/or `bShowCoordinates`.
 4. Re-trigger generation.
 
@@ -863,7 +911,238 @@ warning is emitted since no-corner is a valid design choice.
 
 ---
 
-## 8. System Flow Diagram
+## 8. Step 5 — AFloorManager Details Panel
+
+**Status**: Complete  
+**CLAUDE.md reference**: Section 2 (AFloorManager), Section 4 (FRoomPlacement, FDoorPlacement), Section 9 (WITH_EDITOR conventions)
+
+Step 5 creates `AFloorManager` — the actor that holds a floor's room layout and drives
+spawning for that floor. After this step, designers can set up `RoomPlacements` in the
+Details panel and trigger layout operations from editor buttons.
+
+---
+
+### File Reference
+
+| File | Purpose |
+|---|---|
+| `Public/FloorManager.h` | Class declaration — placements, editor buttons, visualizer, dev log |
+| `Private/FloorManager.cpp` | Constructor, editor button stubs, ClearLayout implementation |
+| `Public/RoomPlacement.h` | `ERoomFace`, `FDoorPlacement`, `FRoomPlacement` struct declarations |
+
+`RoomPlacement.h` was factored out earlier (Step 3 compile fix) but formally belongs to
+Step 5 in the generation roadmap.
+
+---
+
+### Key Properties
+
+| Property | Type | Default | Purpose |
+|---|---|---|---|
+| `RoomPlacements` | `TArray<FRoomPlacement>` | empty | Designer-authored layout — one entry per room |
+| `RoomHeightCm` | `int32` | 300 | All rooms on this floor share this wall/ceiling height |
+| `FloorGridSize` | `FIntPoint` | (20, 20) | Total cell area for this floor |
+| `FloorIndex` | `int32` | 0 | Floor number; drives Z offset during spawning |
+| `OwningBuildingManager` | `ABuildingManager*` | nullptr | Must be set before `GenerateLayout` |
+| `SpawnedRooms` | `TArray<AMasterRoom*>` | — | Runtime-only, tracks spawned actors for `ClearLayout` |
+| `DevLog` | `UBGDevLog*` | — | Logging component, always present |
+| `Visualizer` | `UBGVisualizer*` | — | Editor visualization, `WITH_EDITORONLY_DATA` |
+
+---
+
+### Editor Buttons
+
+| Button | Implemented in | Behavior |
+|---|---|---|
+| `PreviewLayout` | Step 6 | Run validation, draw floor grid and room footprints |
+| `GenerateLayout` | Step 7 | Spawn all rooms via `ABuildingManager::RequestRoomSpawn` |
+| `ClearLayout` | Step 5 | Destroy all `SpawnedRooms`, empty the array |
+| `ClearPreview` | Step 5 | Call `Visualizer->ClearDebugDrawings()` |
+
+`ClearLayout` was the one fully implemented action in Step 5. The other three buttons
+were stubs that received their full implementations in Steps 6 and 7.
+
+---
+
+### Visualizer Constructor Configuration
+
+The `AFloorManager` constructor configures `Visualizer` with floor-appropriate defaults:
+
+```cpp
+Visualizer->GridColor         = FColor(80, 80, 80);   // thin gray lines
+Visualizer->GridLineThickness = 1.f;
+Visualizer->bShowGrid         = true;
+Visualizer->bShowCoordinates  = true;
+Visualizer->OnCreateTextComponent.BindUObject(this, &AFloorManager::CreateDebugTextComponent);
+Visualizer->OnDestroyTextComponent.BindUObject(this, &AFloorManager::DestroyDebugTextComponent);
+Visualizer->OnRedrawRequested.BindUObject(this, &AFloorManager::PreviewLayout);
+```
+
+Binding `OnRedrawRequested` to `PreviewLayout` means that any Visualizer toggle button
+(Grid, Coordinates, CellStates) automatically fires `PreviewLayout` and the viewport
+updates immediately — no manual refresh needed.
+
+---
+
+## 9. Step 6 — PreviewLayout Debug Visualization
+
+**Status**: Complete  
+**CLAUDE.md reference**: Section 9 (WITH_EDITOR conventions, PreviewLayout validation checks)
+
+Step 6 implements `AFloorManager::PreviewLayout()` in full — the editor button that draws
+the floor grid, room footprints, and runs five layout validation checks. No actors are
+spawned; this is a pure visualization pass.
+
+---
+
+### What PreviewLayout Draws
+
+| Draw element | When shown |
+|---|---|
+| Boundary box (outer perimeter of floor grid) | `Visualizer->bShowGrid` |
+| Interior grid lines (cell subdivisions) | `Visualizer->bShowGrid` |
+| Coordinate labels every 5 cells | `Visualizer->bShowCoordinates` |
+| Green box per valid room footprint | Always |
+| Red box per invalid room footprint | When the room fails any check |
+| Room index + size label per footprint | Always |
+
+All draws are **persistent** (`Duration = -1`). `ClearPreview` calls `Visualizer->ClearDebugDrawings()`
+which flushes `FlushPersistentDebugLines()` and `FlushDebugStrings()` globally. `PreviewLayout`
+calls `ClearPreview()` at its start to avoid stacking.
+
+---
+
+### Validation Checks
+
+Five checks run each time `PreviewLayout` is called. Any failure colors the offending
+room(s) red and logs a `LogCritical` message.
+
+| Check | Failure condition |
+|---|---|
+| **Out of bounds** | Any footprint cell extends beyond `FloorGridSize` |
+| **Room overlap** | Two footprint AABB intersect |
+| **Orphan door** | Door face has no adjacent room and `bIsExteriorDoor = false` |
+| **Exterior door on non-perimeter face** | `bIsExteriorDoor = true` but the face does not sit on the floor grid boundary |
+| **Misaligned shared doors** | Two adjacent rooms have doors on the shared face but `WorldStart` or `Width` differ |
+
+Staircase landing check (CLAUDE.md Section 9) is deferred to Step 10 when `AStaircaseRoom`
+and `ConnectsToFloor` exist.
+
+---
+
+### Footprint Resolution
+
+Before drawing or checking, every `FRoomPlacement` is resolved to a concrete `FIntPoint Size`:
+
+1. If `SizeOverride != (0,0)` — use the override.
+2. Else if `RoomDataAsset` is valid — use `RoomDataAsset->MinRoomSize`.
+3. Else — fall back to (1, 1).
+
+If `RotationDegrees` is 90° or 270°, X and Y are swapped after resolution.
+
+---
+
+### Door Width Resolution in PreviewLayout
+
+`PreviewLayout` needs door widths for the misalignment check. It uses a local lambda
+that mirrors `AMasterRoom::GetDoorWidthCells`:
+
+```cpp
+auto GetDoorWidthCells = [](const FRoomPlacement& P, const FDoorPlacement& Door) -> int32
+{
+    const UDoorData* DD = IsValid(Door.DoorDataOverride)
+        ? Door.DoorDataOverride.Get()
+        : (IsValid(P.RoomDataAsset) && IsValid(P.RoomDataAsset->DoorData)
+           ? P.RoomDataAsset->DoorData.Get() : nullptr);
+    return (IsValid(DD) && DD->DoorWidth == EDoorWidth::FourCell) ? 4 : 2;
+};
+```
+
+---
+
+## 10. Step 7 — ABuildingManager Spawning
+
+**Status**: Complete  
+**CLAUDE.md reference**: Section 2 (ABuildingManager), Section 7 (SpawnActor pattern), Section 7 (replication rules)
+
+Step 7 implements `ABuildingManager` as the root actor and the sole authority for spawning
+`AMasterRoom` instances. After this step, pressing `GenerateBuilding` on a placed
+`ABuildingManager` triggers `AFloorManager::GenerateLayout()` on each managed floor manager,
+which in turn calls `RequestRoomSpawn` for each room placement.
+
+---
+
+### File Reference
+
+| File | Purpose |
+|---|---|
+| `Public/BuildingManager.h` | Class declaration — FloorManagers, GenerationSeed, editor buttons |
+| `Private/BuildingManager.cpp` | RequestRoomSpawn, GetLifetimeReplicatedProps, GenerateBuilding, ClearBuilding |
+
+---
+
+### Key Properties
+
+| Property | Type | Notes |
+|---|---|---|
+| `FloorManagers` | `TArray<AFloorManager*>` | Designer-placed in level; Building Manager iterates these |
+| `GenerationSeed` | `int32` | `UPROPERTY(Replicated)` — replicated to all clients; all geometry derives from this |
+
+---
+
+### RequestRoomSpawn
+
+This is the only legal path for spawning an `AMasterRoom`. See the exact pattern in
+CLAUDE.md Section 7. Key rules enforced here:
+
+- `HasAuthority()` guard — returns `nullptr` immediately on clients
+- `Params.SpawnCollisionHandlingOverride = AlwaysSpawn`
+- `Params.Owner = this`
+- After spawn: `Room->InitializeRoom(Placement, GenerationSeed, FloorRoomHeightCm)`
+
+`FloorRoomHeightCm` is passed from `AFloorManager` at the call site so `AMasterRoom`
+receives the correct floor-specific height without querying upward.
+
+---
+
+### Replication
+
+`ABuildingManager::GetLifetimeReplicatedProps` registers `GenerationSeed` via `DOREPLIFETIME`.
+Clients receive the seed when they receive the actor. Late-joining clients receive the seed
+and then call `InitializeRoom` locally on each already-spawned `AMasterRoom` — they regenerate
+identical geometry without any network traffic for mesh data.
+
+---
+
+### Editor Buttons
+
+| Button | Behavior |
+|---|---|
+| `GenerateBuilding` | Iterates `FloorManagers`, calls `FloorManager->GenerateLayout()` on each |
+| `ClearBuilding` | Iterates `FloorManagers`, calls `FloorManager->ClearLayout()` on each |
+
+Both buttons are `#if WITH_EDITOR` and `CallInEditor`. They do not guard on `HasAuthority()`
+because editor sessions run as listen server — authority is always present. In a packaged
+build these buttons do not compile.
+
+---
+
+### OwningBuildingManager Reference
+
+`AFloorManager::OwningBuildingManager` must be set before `GenerateLayout` is called. It can
+be assigned two ways:
+1. **Designer**: drag the `ABuildingManager` reference into the Details panel on each
+   `AFloorManager`.
+2. **Runtime**: `ABuildingManager::GenerateBuilding` could set `OwningBuildingManager` on
+   each `AFloorManager` before calling `GenerateLayout` — this is not yet implemented but
+   is the intended final path.
+
+If `OwningBuildingManager` is null when `GenerateLayout` fires, a `LogCritical` is emitted
+and generation aborts.
+
+---
+
+## 11. System Flow Diagram
 
 ```
 [Designer places ABuildingManager in world]
@@ -908,14 +1187,14 @@ warning is emitted since no-corner is a valid design choice.
 
 ---
 
-## 9. Future Work and Pending Investigations
+## 12. Pending Investigations
 
 This section records experiments, observations, and deferred feature work that emerged
 during testing but were not implemented at the time. Review before starting any related system.
 
 ---
 
-### 9.1 Hallway Rooms via MasterRoom SizeOverride
+### 12.1 Hallway Rooms via MasterRoom SizeOverride
 
 **Observation (Step 4 testing):** A `MasterRoom` with `PreviewPlacement.SizeOverride = (18, 6)`
 generates a convincing narrow corridor — full floor, ceiling, and wall coverage with proper
@@ -938,12 +1217,18 @@ be validated against the bin-packing / overlap logic.
 
 ---
 
-### 9.2 Column Mesh Per-Side Yaw Override
+### 12.2 Column Mesh Per-Side Yaw Override
 
 **Observation (Step 4/5 door testing):** When a 2-cell door with columns is placed adjacent
 to a corner cell, the left and right column meshes may not align with the corner mesh because
 the same `ColumnMesh` is placed with the same transform on both sides of the opening. Corner
 meshes are rotated per-corner; column meshes are not rotated at all.
+
+**Note on bUseColumns (implemented):** The simpler problem — flanking cells always being
+reserved as empty even when no `ColumnMesh` was wanted — was resolved by adding
+`UDoorData::bUseColumns = false` (default). When false, flanking cells receive normal wall
+modules from `WallData`. The per-side yaw issue is a *separate* concern affecting doors
+that do use columns; it is not related to `bUseColumns`.
 
 **Deferred feature:** Add per-side yaw overrides to `UDoorData`:
 
@@ -968,7 +1253,7 @@ pieces, or when designers report consistent alignment problems at door-adjacent 
 
 ---
 
-## 10. Adding a New Developer Checklist
+## 13. Adding a New Developer Checklist
 
 If you are joining this project:
 
@@ -978,7 +1263,7 @@ If you are joining this project:
 - [ ] Build the project once from Rider before making changes to ensure the baseline compiles.
 - [ ] Understand the 100cm cell grid convention — every coordinate in the generation system
       is in cell units, not centimeters, unless explicitly named `*Cm`.
-- [ ] Do not add `UE_LOG(LogTemp, ...)` calls. Use `DebugLog->LogImportant(...)` or
+- [ ] Do not add `UE_LOG(LogTemp, ...)` calls. Use `DevLog->LogImportant(...)` or
       `UE_LOG(LogBuildingGenerator, ...)`.
 - [ ] Do not place ISM instance data in any `UPROPERTY(Replicated)` field — geometry is
       always regenerated locally from seed.
@@ -990,4 +1275,4 @@ If you are joining this project:
 
 ---
 
-*Last updated: Step 4 doors complete — EDoorWidth (TwoCell/FourCell), ColumnMesh, DoorPlacementOffset, ColumnPlacementOffset, GetEffectiveDoorData, GetDoorWidthCells, FindColumnForPos (column position suppression regardless of ColumnMesh). Section 9 added: hallway SizeOverride experiment, column per-side yaw deferred feature.*
+*Last updated: Steps 5–7 complete — AFloorManager Details panel, PreviewLayout (5 validation checks + full debug visualization), ABuildingManager spawning authority + replication. UDebugLog refactored into UBGDevLog (logging) + UBGVisualizer (editor-only visualization). UDoorData::bUseColumns added — flanking cell reservation now explicit opt-in (default false). Sections 8/9/10 added for Steps 5/6/7; Sections 11/12/13 carry forward the system diagram, pending investigations, and new-developer checklist.*
