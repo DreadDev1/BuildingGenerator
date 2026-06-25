@@ -616,3 +616,6 @@ After any significant decision, architectural change, or completed implementatio
 
 Keeping CLAUDE.md current is what makes the next session productive.
 A stale CLAUDE.md is worse than no CLAUDE.md.
+
+update project
+

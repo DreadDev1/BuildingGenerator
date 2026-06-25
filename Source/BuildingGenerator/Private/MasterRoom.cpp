@@ -584,14 +584,16 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 	FRandomStream Stream(GenerationSeed ^ SeedOffset_WallFill);
 
 	// Returns the FDoorPlacement* for the door whose column falls on FacePos
-	// (CellOffset-1 or CellOffset+Width). Does NOT require ColumnMesh to be set —
-	// column positions are always reserved; a mesh is placed only if ColumnMesh is valid.
+	// (CellOffset-1 or CellOffset+Width), but only when bUseColumns is true on that door's DoorData.
+	// When bUseColumns is false, flanking cells are not reserved and receive normal wall modules.
 	auto FindColumnForPos = [&](ERoomFace CurFace, int32 FacePos) -> const FDoorPlacement*
 	{
 		for (const FDoorPlacement& Door : ActivePlacement.Doors)
 		{
 			if (Door.Face != CurFace) continue;
-			const int32 Width = GetDoorWidthCells(GetEffectiveDoorData(Door));
+			const UDoorData* DData = GetEffectiveDoorData(Door);
+			if (!IsValid(DData) || !DData->bUseColumns) continue;
+			const int32 Width = GetDoorWidthCells(DData);
 			if (FacePos == Door.CellOffset - 1 || FacePos == Door.CellOffset + Width) return &Door;
 		}
 		return nullptr;
@@ -620,10 +622,10 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 	};
 
 	// Returns true if FacePos should not receive a regular wall module.
-	// Column positions are blocked regardless of whether ColumnMesh is set.
+	// Column positions are only blocked when ColumnMesh is set; otherwise they get a wall module.
 	auto IsBlockedPos = [&](ERoomFace CurFace, int32 FacePos) -> bool
 	{
-		if (FindColumnForPos(CurFace, FacePos)) return true;
+		if (FindColumnForPos(CurFace, FacePos)) return true;  // only matches when ColumnMesh is valid
 		if (IsDoorSpanPos(CurFace, FacePos)) return true;
 		return false;
 	};
@@ -649,8 +651,10 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 		int32 Pos = PosMin;
 		while (Pos <= PosMax)
 		{
-			// 1. Column position — always reserved (no wall module placed here).
-			//    ColumnMesh is placed when set; otherwise the cell is left empty.
+			// 1. Column position — only reached when bUseColumns is true on the door's DoorData.
+			//    If ColumnMesh is set, it is placed. If null, the cell is reserved but left empty.
+			//    When bUseColumns is false, FindColumnForPos returns nullptr and the flanking
+			//    cell falls through to the regular wall module bin-pack instead.
 			if (const FDoorPlacement* ColDoor = FindColumnForPos(Face, Pos))
 			{
 				const UDoorData* DData = GetEffectiveDoorData(*ColDoor);

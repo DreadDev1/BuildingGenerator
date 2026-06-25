@@ -44,6 +44,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Layout")
 	EDoorWidth DoorWidth = EDoorWidth::TwoCell;
 
+	// When false (default), the cells flanking the door opening (CellOffset-1 and CellOffset+DoorWidth)
+	// are not reserved — they receive normal wall modules from WallData.
+	// When true, those cells are reserved for ColumnMesh. If ColumnMesh is null the cell is left empty.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Layout")
+	bool bUseColumns = false;
+
 	// Applied in wall-forward space (X = depth into room, Y = along face, Z = up).
 	// Corrects for door meshes whose interior face does not land flush on the wall boundary.
 	// Example: door mesh sits 10cm too far back → set X = 10 to push it forward.

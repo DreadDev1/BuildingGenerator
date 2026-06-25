@@ -18,8 +18,11 @@ For the implementation roadmap, see CLAUDE.md (Section 13).
    - [Test B: Floor Mesh Instances](#test-b-floor-mesh-instances)
 4. [Step 3b — Testing Ceiling Mesh Fill](#4-step-3b--testing-ceiling-mesh-fill)
 5. [Step 4 — Testing Wall Mesh Stacks](#5-step-4--testing-wall-mesh-stacks)
-6. [Tips and Experiments](#6-tips-and-experiments)
-7. [Debug Log Reference](#7-debug-log-reference)
+6. [Step 5 — Setting Up AFloorManager](#6-step-5--setting-up-afloormanager)
+7. [Step 6 — Using PreviewLayout](#7-step-6--using-previewlayout)
+8. [Step 7 — Generating a Full Building via ABuildingManager](#8-step-7--generating-a-full-building-via-abuildingmanager)
+9. [Tips and Experiments](#9-tips-and-experiments)
+10. [Debug Components Reference](#10-debug-components-reference)
 
 ---
 
@@ -35,8 +38,8 @@ the same building.
 | Actor | Purpose |
 |---|---|
 | `AMasterRoom` | A single room. Owns all floor, ceiling, wall, and decoration geometry. |
-| `AFloorManager` | One per floor. Holds the room layout for that floor. *(Available in a later step)* |
-| `ABuildingManager` | The root actor placed in the world. Drives the full building. *(Available in a later step)* |
+| `AFloorManager` | One per floor. Holds the room layout for that floor. Place in the level and assign rooms via the `RoomPlacements` array in the Details panel. |
+| `ABuildingManager` | The root actor placed in the world. Drives the full building. Add `AFloorManager` actors to its `FloorManagers` array, then press **GenerateBuilding**. |
 
 **Key data assets you will configure:**
 
@@ -58,10 +61,10 @@ the same building.
 | Step 2 | Room grid allocation and cell classification | Available — debug visualization works |
 | Step 3 | Weighted random floor mesh fill | Available — Random or Uniform fill mode; multi-mesh pool; AllowRotation |
 | Step 3b | Weighted random ceiling mesh fill | Available — same modes as floor; configure via UCeilingData |
-| Step 4 | Wall mesh stacks + corner pieces | Available — WallData with BaseMesh/TopMesh required; CornerMesh optional |
-| Step 5 | AFloorManager Details panel and room layout | Not yet implemented |
-| Step 6 | PreviewLayout debug visualization in AFloorManager | Not yet implemented |
-| Step 7 | ABuildingManager spawning | Not yet implemented |
+| Step 4 | Wall mesh stacks + corner pieces + door mesh placement | Available — WallData with BaseMesh/TopMesh required; CornerMesh optional; bUseColumns controls flanking cell reservation |
+| Step 5 | AFloorManager Details panel and room layout | Available — place AFloorManager, fill RoomPlacements, use ClearLayout |
+| Step 6 | PreviewLayout debug visualization in AFloorManager | Available — draws floor grid, room footprints; 5 validation checks |
+| Step 7 | ABuildingManager spawning | Available — GenerateBuilding/ClearBuilding editor buttons |
 
 ---
 
@@ -85,9 +88,8 @@ No mesh assets are needed.
 3. Under **MasterRoom | Debug**, find `PreviewPlacement`:
    - Set `SizeOverride` to `(6, 6)` (or any non-zero value).
    - Leave `RoomDataAsset` empty.
-4. Find the **DebugLog** component in the Details panel (listed under Components).
+4. Find the **Visualizer** component in the Details panel (listed under Components).
 5. Enable the following:
-   - `bEnableDebug` — master switch, must be on.
    - `bShowGrid` — draws green lines at every cell boundary.
    - `bShowCellStates` — draws a colored box inside each cell.
 6. Click the **PreviewRoom** button (found under **MasterRoom | Preview** in Details).
@@ -117,10 +119,10 @@ A 6×6 room produces a 4×4 interior of Floor cells, a ring of Wall cells, and 4
 > will show a Critical warning and skip floor mesh placement. The grid visualization still
 > draws correctly. This is intentional for Test A.
 
-> **Expected log — coordinate text:** The Output Log will also show a Critical message
-> about `OnCreateTextComponent delegate not bound`. This is normal — coordinate text
-> labels require Step 6 wiring that has not been implemented yet. Ignore this message
-> and do not enable `bShowCoordinates` until Step 6 is complete.
+> **Coordinate labels:** `bShowCoordinates` on `AMasterRoom` requires the text component
+> delegate to be bound. On `AFloorManager` this works immediately. On a standalone
+> `AMasterRoom`, coordinate labels are displayed when the delegate is wired — this is done
+> automatically when rooms are spawned via `AFloorManager::GenerateLayout`.
 
 **To reset:** Click the **ClearPreview** button. This removes all debug lines and clears
 any placed mesh instances.
@@ -544,7 +546,201 @@ If `CornerMesh` is null, `Corner pieces placed: 0` is logged and the line is sti
 
 ---
 
-## 6. Tips and Experiments
+## 6. Step 5 — Setting Up AFloorManager
+
+`AFloorManager` holds the room layout for one floor. You place it in the level, fill in
+the `RoomPlacements` array in the Details panel, and it drives spawning for all rooms on
+that floor.
+
+---
+
+### Step 1 — Place AFloorManager in the Level
+
+Drag an `AFloorManager` from the Outliner or Place Actors panel into your level.
+Its world location becomes the origin for the entire floor grid — place it at the
+intended floor height.
+
+---
+
+### Step 2 — Configure Floor Properties
+
+Select the `AFloorManager` actor and open the **Details** panel.
+
+| Property | Category | Default | What to set |
+|---|---|---|---|
+| `FloorIndex` | FloorManager\|Layout | 0 | Floor number (0 = ground floor, 1 = second floor, etc.) |
+| `RoomHeightCm` | FloorManager\|Layout | 300 | Height of all rooms on this floor in centimeters |
+| `FloorGridSize` | FloorManager\|Layout | (20, 20) | Total cell area of the floor (X × Y cells) |
+| `OwningBuildingManager` | FloorManager\|Layout | nullptr | Reference to the ABuildingManager actor in this level |
+
+---
+
+### Step 3 — Add Room Placements
+
+Under **FloorManager\|Layout**, find the `RoomPlacements` array and click **+** to add entries.
+Each entry is an `FRoomPlacement` with these fields:
+
+| Field | Purpose |
+|---|---|
+| `RoomClass` | The actor class to spawn (e.g. `AMasterRoom`) |
+| `RoomDataAsset` | The `URoomData` asset that defines this room's style |
+| `GridOrigin` | Top-left corner of the room footprint in cell coordinates |
+| `SizeOverride` | Exact room size in cells. If (0,0), uses `RoomDataAsset->MinRoomSize` |
+| `RotationDegrees` | Rotate the room layout: 0, 90, 180, or 270 |
+| `Doors` | Array of `FDoorPlacement` entries (see below) |
+| `bIsEntranceRoom` | Mark this room as the building entrance on floor 0 (one per building) |
+
+**Adding a door to a room:**
+
+Each `FDoorPlacement` in the `Doors` array describes one doorway:
+
+| Field | Purpose |
+|---|---|
+| `Face` | Which wall the door is on: North (+Y), South (-Y), East (+X), West (-X) |
+| `CellOffset` | Start cell of the door span, 0-based from the left as seen from inside |
+| `DoorDataOverride` | Optional per-door style override; leave null to use the room's default DoorData |
+| `bIsExteriorDoor` | True for doors that face the outside of the building |
+
+---
+
+### Step 4 — Test ClearLayout
+
+Press the **ClearLayout** button (under **FloorManager\|Actions** in Details). This destroys
+all `AMasterRoom` actors spawned by this floor manager. Use it to reset before re-generating.
+
+**GenerateLayout** requires `OwningBuildingManager` to be set (Step 7). To test room generation
+before the BuildingManager is configured, use `AMasterRoom::PreviewRoom` directly (Step 3–4).
+
+---
+
+## 7. Step 6 — Using PreviewLayout
+
+`PreviewLayout` is an editor button on `AFloorManager` that draws the floor grid and every
+room footprint in the viewport without spawning any actors. It also runs validation checks
+and highlights invalid rooms in red.
+
+---
+
+### How to Use
+
+1. Select your `AFloorManager` actor.
+2. Press **PreviewLayout** (under **FloorManager\|Actions** in the Details panel).
+3. The viewport immediately shows the floor grid and room footprints.
+4. Press **ClearPreview** to remove the debug draw before re-running.
+
+`PreviewLayout` clears the previous draw automatically each time it runs — you do not need
+to press **ClearPreview** between previews unless you want to inspect the level without
+the overlay.
+
+---
+
+### What You See
+
+| Visual | Meaning |
+|---|---|
+| Gray grid lines | Floor cell grid — outer boundary and interior subdivisions |
+| Coordinate labels (every 5 cells) | Cell (X, Y) coordinates in grid space |
+| Green box | Room footprint that passed all validation checks |
+| Red box | Room footprint that failed one or more checks |
+| `[N] WxH` label on each box | Room index and resolved size |
+
+---
+
+### Validation Checks
+
+Each time `PreviewLayout` runs, five checks fire automatically. Failures turn the room
+box red and print `[CRITICAL]` messages to the Output Log.
+
+| Check | What it catches |
+|---|---|
+| **Out of bounds** | Room footprint extends outside `FloorGridSize` |
+| **Room overlap** | Two rooms share one or more cells |
+| **Orphan door** | Door is on a face with no adjacent room, and `bIsExteriorDoor = false` |
+| **Exterior door on non-perimeter face** | Door marked `bIsExteriorDoor = true` but the face is not on the building edge |
+| **Misaligned shared door** | Two adjacent rooms both have doors on the shared face, but the start position or width differs |
+
+All green = layout is valid. Press **GenerateLayout** (Step 7) to spawn the rooms.
+
+---
+
+### Visualizer Toggles
+
+The `Visualizer` component on `AFloorManager` has toggle buttons visible in the Details
+panel under **Debug\|Toggle**:
+
+| Button | What it toggles |
+|---|---|
+| `ToggleGrid` | Show/hide grid lines and boundary box |
+| `ToggleCoordinates` | Show/hide cell coordinate labels |
+
+Pressing any toggle button automatically re-fires `PreviewLayout` — the viewport updates
+immediately without pressing the button again.
+
+---
+
+## 8. Step 7 — Generating a Full Building via ABuildingManager
+
+`ABuildingManager` is the root actor for the whole building. It coordinates all floor
+managers and is the sole authority for spawning `AMasterRoom` instances.
+
+---
+
+### Step 1 — Place ABuildingManager
+
+Drag an `ABuildingManager` into the level at the building's world position. All geometry
+is relative to this actor's location — the world origin is never used.
+
+---
+
+### Step 2 — Connect Floor Managers
+
+In the **Details** panel of `ABuildingManager`, find the `FloorManagers` array and add
+a reference to each `AFloorManager` you placed for this building. Order does not matter
+for generation (each floor manager is independent), but keeping them in ascending
+`FloorIndex` order is recommended for clarity.
+
+Also set **each** `AFloorManager`'s `OwningBuildingManager` field to point back to this
+`ABuildingManager`. Without this reference, `GenerateLayout` on a floor manager will
+fail with a `[CRITICAL]` log message and abort.
+
+---
+
+### Step 3 — Set Generation Seed
+
+Under **BuildingManager\|Generation**, set `GenerationSeed` to any integer. This single
+value drives all geometry randomization across every room and floor. The same seed always
+produces the same building. Change it to get a different layout.
+
+---
+
+### Step 4 — Generate the Building
+
+Press **GenerateBuilding** (under **BuildingManager\|Actions** in Details). This calls
+`GenerateLayout` on every connected `AFloorManager`, which in turn spawns `AMasterRoom`
+actors for every placement in `RoomPlacements`.
+
+Press **ClearBuilding** to destroy all spawned rooms without resetting the layout.
+
+---
+
+### Door Notes — bUseColumns
+
+By default, `UDoorData::bUseColumns` is **false**. This means the wall cells immediately
+flanking the door opening (one cell to each side) receive normal wall modules from
+`WallData`, exactly like any other wall cell.
+
+Set `bUseColumns = true` on a `UDoorData` asset when you want to use a dedicated column
+mesh at the flanking cells. Behavior summary:
+
+| `bUseColumns` | `ColumnMesh` | Result |
+|---|---|---|
+| `false` | any | Flanking cells receive wall modules normally |
+| `true` | set | `ColumnMesh` placed at flanking cells |
+| `true` | null | Flanking cells reserved and left empty |
+
+---
+
+## 9. Tips and Experiments
 
 This section captures non-obvious usage patterns and experiments worth exploring further.
 
@@ -584,49 +780,69 @@ position the door at least one wall cell away from the corner so the column does
 directly adjoin the corner piece.
 
 **This will be addressed in a future DoorData update** that adds per-side yaw overrides
-for left and right columns. See DEVDOC.md Section 9.2 for the technical plan.
+for left and right columns. See DEVDOC.md Section 12.2 for the technical plan.
 
 ---
 
-## 7. Debug Log Reference
+## 10. Debug Components Reference
 
-The `DebugLog` component is attached to every `AMasterRoom`. All of its settings are
-exposed in the Details panel under the component.
-
-### Core Switches
-
-| Property | Effect |
-|---|---|
-| `bEnableDebug` | Master switch. Disabling this suppresses all debug output. |
-| `bEnableScreenLogging` | Shows log messages as on-screen overlays during Play. |
-| `CurrentLogLevel` | Controls verbosity. `Important` is the default. Set to `Verbose` to see per-cell detail. |
-
-### Visualization Toggles (Editor Only)
-
-| Property | Effect |
-|---|---|
-| `bShowGrid` | Green lines at every cell boundary. |
-| `bShowCellStates` | Colored boxes inside each cell showing its type. |
-| `bShowCoordinates` | `(X,Y)` label at each cell center. *(Requires Step 6 wiring — not available yet.)* |
-
-### Appearance
-
-| Property | Effect |
-|---|---|
-| `GridColor` | Color of the grid boundary lines. Default: Green. |
-| `GridLineThickness` | Thickness of the boundary lines. Default: 5. |
-| `GridLineLifetime` | How long debug lines persist. `-1` = persistent until ClearPreview. |
-| `FloorCellColor` | Box color for Floor cells. Default: Blue. |
-| `WallCellColor` | Box color for Wall cells. Default: Black. |
-| `CornerCellColor` | Box color for Corner cells. Default: Purple/Magenta (`RGB 128, 0, 128`). |
-| `CellBoxZOffset` | Height of cell boxes above the ground plane. Default: 20 cm. |
-
-### Performance Profiling
-
-| Property | Effect |
-|---|---|
-| `bEnablePerformanceProfiling` | Logs timing for each generation operation in milliseconds. |
+Debug output is split across two components present on both `AMasterRoom` and `AFloorManager`.
+Both are visible in the Details panel under the Components list.
 
 ---
 
-*Last updated: Step 4 doors complete — door widths (2-cell/4-cell), column meshes, placement offsets (DoorPlacementOffset, ColumnPlacementOffset), 4-cell wall suppression fix. Section 6 added: corridor SizeOverride experiment, column-corner alignment workaround.*
+### DevLog Component — Logging
+
+`DevLog` controls all text output to the Output Log and the on-screen overlay.
+
+| Property | Effect |
+|---|---|
+| `bEnableDebug` | Master switch — disabling this suppresses all non-critical log output |
+| `bEnableScreenLogging` | Shows log messages as on-screen overlays in editor builds |
+| `CurrentLogLevel` | Verbosity. `Important` is the default. `Verbose` shows per-cell detail |
+| `bEnablePerformanceProfiling` | Logs timing for each generation step in milliseconds |
+
+> `LogCritical` (used for null assets and bad configurations) always fires regardless of
+> `bEnableDebug`. You cannot silence critical errors.
+
+---
+
+### Visualizer Component — Editor Visualization
+
+`Visualizer` controls all debug drawing in the viewport. It is an editor-only component —
+it does not compile into packaged builds.
+
+**Properties:**
+
+| Property | Effect |
+|---|---|
+| `bShowGrid` | Grid lines at every cell boundary |
+| `bShowCellStates` | Colored box inside each cell showing its type |
+| `bShowCoordinates` | `(X,Y)` label at each cell center |
+| `GridColor` | Color of grid lines. Default: Green on AMasterRoom, Gray (80,80,80) on AFloorManager |
+| `GridLineThickness` | Line thickness. Default: 5 on AMasterRoom, 1 on AFloorManager |
+
+**Cell display colors** (for `bShowCellStates`):
+
+| Color | State | Meaning |
+|---|---|---|
+| Blue | Empty | Floor cell — no mesh placed yet |
+| Red | Occupied | Floor cell with a placed mesh |
+| Yellow | Custom | Cell from a ForcedPlacement override (Step 12) |
+| Teal | Void | Designer-reserved empty region (Step 12) |
+| Black | Wall | Structural wall or corner cell |
+| Green | Door | Wall cell within a door span |
+
+**Toggle buttons** (under **Debug\|Toggle** in Details):
+
+| Button | What it toggles |
+|---|---|
+| `ToggleGrid` | `bShowGrid` |
+| `ToggleCoordinates` | `bShowCoordinates` |
+| `ToggleCellStates` | `bShowCellStates` |
+
+Any toggle automatically re-fires the preview draw on the owning actor — no manual refresh needed.
+
+---
+
+*Last updated: Steps 5–7 complete — AFloorManager setup and RoomPlacements, PreviewLayout with 5 validation checks and Visualizer toggles, ABuildingManager full generation workflow. bUseColumns added to UDoorData (default false — flanking cells receive wall modules unless opt-in). UDebugLog replaced by DevLog (logging) + Visualizer (editor draw) components. Sections 6/7/8 added for Steps 5/6/7; Sections 9/10 carry forward tips and debug reference.*
