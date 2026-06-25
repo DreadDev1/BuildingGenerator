@@ -846,3 +846,12 @@ Any toggle automatically re-fires the preview draw on the owning actor — no ma
 ---
 
 *Last updated: Steps 5–7 complete — AFloorManager setup and RoomPlacements, PreviewLayout with 5 validation checks and Visualizer toggles, ABuildingManager full generation workflow. bUseColumns added to UDoorData (default false — flanking cells receive wall modules unless opt-in). UDebugLog replaced by DevLog (logging) + Visualizer (editor draw) components. Sections 6/7/8 added for Steps 5/6/7; Sections 9/10 carry forward tips and debug reference.*
+<<<<<<< Updated upstream
+=======
+
+  1. Create a UBuildingData asset in the content browser (DA_Warehouse, DA_Apartment, etc.)                                                                                                                                         
+  2. Add entries to its Floors array — set RoomHeightCm, FloorGridSize, and RoomPlacements per floor                                                                                                                                
+  3. Place one ABuildingManager in the level, assign the DataAsset to BuildingDataAsset                                                                                                                                             
+  4. Set GenerationSeed, click GenerateBuilding — floors spawn at correct Z automatically                                                                                                                                           
+  5. Click ClearBuilding to tear it all down
+>>>>>>> Stashed changes
