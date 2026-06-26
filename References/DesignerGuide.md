@@ -38,8 +38,8 @@ the same building.
 | Actor | Purpose |
 |---|---|
 | `AMasterRoom` | A single room. Owns all floor, ceiling, wall, and decoration geometry. |
-| `AFloorManager` | One per floor. Holds the room layout for that floor. Place in the level and assign rooms via the `RoomPlacements` array in the Details panel. |
-| `ABuildingManager` | The root actor placed in the world. Drives the full building. Add `AFloorManager` actors to its `FloorManagers` array, then press **GenerateBuilding**. |
+| `AFloorManager` | One per floor. Spawned automatically from the `UBuildingData` asset — you do **not** place these in the level. Configure them by adding entries to the `Floors` array inside `UBuildingData`. |
+| `ABuildingManager` | The root actor placed in the world. Assign a `UBuildingData` asset and press **GenerateBuilding** or **SpawnBuilding**. |
 
 **Key data assets you will configure:**
 
@@ -64,7 +64,7 @@ the same building.
 | Step 4 | Wall mesh stacks + corner pieces + door mesh placement | Available — WallData with BaseMesh/TopMesh required; CornerMesh optional; bUseColumns controls flanking cell reservation |
 | Step 5 | AFloorManager Details panel and room layout | Available — place AFloorManager, fill RoomPlacements, use ClearLayout |
 | Step 6 | PreviewLayout debug visualization in AFloorManager | Available — draws floor grid, room footprints; 5 validation checks |
-| Step 7 | ABuildingManager spawning | Available — GenerateBuilding/ClearBuilding editor buttons |
+| Step 7 | ABuildingManager DataAsset-driven spawning | Available — create `UBuildingData`, assign to `ABuildingManager`; three buttons: GenerateBuilding (grid preview), SpawnBuilding (full geometry), ClearBuilding |
 
 ---
 
@@ -659,7 +659,7 @@ box red and print `[CRITICAL]` messages to the Output Log.
 | **Exterior door on non-perimeter face** | Door marked `bIsExteriorDoor = true` but the face is not on the building edge |
 | **Misaligned shared door** | Two adjacent rooms both have doors on the shared face, but the start position or width differs |
 
-All green = layout is valid. Press **GenerateLayout** (Step 7) to spawn the rooms.
+All green = layout is valid. Press **SpawnBuilding** on `ABuildingManager` (Step 7) to generate full room geometry, or press **GenerateLayout** directly on an `AFloorManager` for a standalone single-floor test.
 
 ---
 
@@ -680,46 +680,84 @@ immediately without pressing the button again.
 
 ## 8. Step 7 — Generating a Full Building via ABuildingManager
 
-`ABuildingManager` is the root actor for the whole building. It coordinates all floor
-managers and is the sole authority for spawning `AMasterRoom` instances.
+`ABuildingManager` is the root actor for the whole building. All floors and rooms are
+driven from a single `UBuildingData` DataAsset. You do **not** place `AFloorManager`
+actors in the level — they are spawned automatically when you press a button.
 
 ---
 
-### Step 1 — Place ABuildingManager
+### Step 1 — Create a UBuildingData Asset
 
-Drag an `ABuildingManager` into the level at the building's world position. All geometry
-is relative to this actor's location — the world origin is never used.
-
----
-
-### Step 2 — Connect Floor Managers
-
-In the **Details** panel of `ABuildingManager`, find the `FloorManagers` array and add
-a reference to each `AFloorManager` you placed for this building. Order does not matter
-for generation (each floor manager is independent), but keeping them in ascending
-`FloorIndex` order is recommended for clarity.
-
-Also set **each** `AFloorManager`'s `OwningBuildingManager` field to point back to this
-`ABuildingManager`. Without this reference, `GenerateLayout` on a floor manager will
-fail with a `[CRITICAL]` log message and abort.
+In the **Content Browser**, right-click → **Miscellaneous → Data Asset** → select
+`UBuildingData`. Name it something descriptive (e.g. `DA_Warehouse`, `DA_Office_4F`).
 
 ---
 
-### Step 3 — Set Generation Seed
+### Step 2 — Configure Floors in the Asset
+
+Open the asset. In the **Floors** array, add one entry per floor (ground floor first).
+Each entry is a `FFloorDefinition`:
+
+| Field | What to set |
+|---|---|
+| `FloorClass` | Leave null to use the default `AFloorManager`. Set to a subclass for special floors (e.g. `AStaircaseFloor`). |
+| `RoomHeightCm` | Height of every room on this floor in cm. 300 is a typical interior height. Must match the visual top of your wall stack. |
+| `FloorGridSize` | Maximum cell area for this floor (e.g. 20×20). Rooms that extend outside this boundary will fail PreviewLayout validation. |
+| `RoomPlacements` | The room layout for this floor. Add one entry per room — same setup as configuring `RoomPlacements` directly on a standalone `AFloorManager` (see Step 5 guide). |
+
+> **Multi-floor Z**: each floor's world Z is calculated automatically as the cumulative
+> sum of `RoomHeightCm` for all floors below it. Floor 0 = building base; floor 1 sits at
+> `Floor0.RoomHeightCm` cm above that; floor 2 sits at `Floor0 + Floor1` cm above, and so on.
+
+---
+
+### Step 3 — Place ABuildingManager and Assign the Asset
+
+Drag an `ABuildingManager` actor into the level at the building's world position. All
+geometry is placed relative to this actor's location — the world origin is never used.
+
+In the **Details** panel, find **BuildingManager\|Layout** and assign your `UBuildingData`
+asset to `BuildingDataAsset`.
+
+---
+
+### Step 4 — Set the Generation Seed
 
 Under **BuildingManager\|Generation**, set `GenerationSeed` to any integer. This single
 value drives all geometry randomization across every room and floor. The same seed always
-produces the same building. Change it to get a different layout.
+produces the same building — change it to get a different result.
 
 ---
 
-### Step 4 — Generate the Building
+### Step 5 — Plan Layouts with GenerateBuilding
 
-Press **GenerateBuilding** (under **BuildingManager\|Actions** in Details). This calls
-`GenerateLayout` on every connected `AFloorManager`, which in turn spawns `AMasterRoom`
-actors for every placement in `RoomPlacements`.
+Press **GenerateBuilding** (under **BuildingManager\|Preview** in Details).
 
-Press **ClearBuilding** to destroy all spawned rooms without resetting the layout.
+This spawns `AFloorManager` actors from the DataAsset and draws **debug grid wireframes
+for all floors simultaneously** — no room geometry is generated. Because debug lines have
+no depth occlusion in the editor viewport, you can see every floor's grid at once regardless
+of their Z heights. Use this view to check floor extents and room footprint validity before
+committing to geometry.
+
+Each floor runs its `PreviewLayout` validation automatically. Red room boxes indicate
+layout problems — fix them in the DataAsset and press **GenerateBuilding** again.
+
+---
+
+### Step 6 — Generate Full Geometry with SpawnBuilding
+
+When the layout looks correct, press **SpawnBuilding**.
+
+This re-spawns all `AFloorManager` actors from the DataAsset and generates full room
+geometry on every floor — floors, ceilings, walls, corners, and doors are all placed.
+
+---
+
+### Step 7 — Clear Everything with ClearBuilding
+
+Press **ClearBuilding** to destroy all spawned `AFloorManager` actors, their rooms, and
+all floor grid previews in one step. The DataAsset is not modified — press
+**GenerateBuilding** or **SpawnBuilding** again to restore the building.
 
 ---
 
@@ -845,13 +883,4 @@ Any toggle automatically re-fires the preview draw on the owning actor — no ma
 
 ---
 
-*Last updated: Steps 5–7 complete — AFloorManager setup and RoomPlacements, PreviewLayout with 5 validation checks and Visualizer toggles, ABuildingManager full generation workflow. bUseColumns added to UDoorData (default false — flanking cells receive wall modules unless opt-in). UDebugLog replaced by DevLog (logging) + Visualizer (editor draw) components. Sections 6/7/8 added for Steps 5/6/7; Sections 9/10 carry forward tips and debug reference.*
-<<<<<<< Updated upstream
-=======
-
-  1. Create a UBuildingData asset in the content browser (DA_Warehouse, DA_Apartment, etc.)                                                                                                                                         
-  2. Add entries to its Floors array — set RoomHeightCm, FloorGridSize, and RoomPlacements per floor                                                                                                                                
-  3. Place one ABuildingManager in the level, assign the DataAsset to BuildingDataAsset                                                                                                                                             
-  4. Set GenerationSeed, click GenerateBuilding — floors spawn at correct Z automatically                                                                                                                                           
-  5. Click ClearBuilding to tear it all down
->>>>>>> Stashed changes
+*Last updated: Steps 5–7 complete plus DataAsset refactor. AFloorManager setup and RoomPlacements, PreviewLayout with 5 validation checks and Visualizer toggles, ABuildingManager DataAsset-driven generation. AFloorManager actors no longer placed in level — spawned from UBuildingData automatically. Three editor buttons: GenerateBuilding (wireframe grid preview all floors), SpawnBuilding (full geometry), ClearBuilding. OwningBuildingManager removed from AFloorManager. bUseColumns added to UDoorData (default false). DevLog + Visualizer components replace UDebugLog. UE 5.8.*

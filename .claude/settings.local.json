@@ -3,7 +3,8 @@
     "allow": [
       "Bash(Get-ChildItem -Path \"D:\\\\PerforceProjects\\\\BuildingGenerator\\\\References\\\\Data\" -Recurse -Force)",
       "Bash(Select-Object FullName, PSIsContainer)",
-      "Bash(Sort-Object FullName)"
+      "Bash(Sort-Object FullName)",
+      "Bash(grep -E \"\\\\.h$\")"
     ]
   }
 }

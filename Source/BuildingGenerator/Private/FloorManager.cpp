@@ -32,6 +32,60 @@ AFloorManager::AFloorManager()
 }
 
 // ============================================================
+// Generation
+// ============================================================
+
+void AFloorManager::GenerateLayoutWith(ABuildingManager* BuildingManager)
+{
+	if (!IsValid(BuildingManager))
+	{
+		DevLog->LogCritical(TEXT("GenerateLayoutWith: BuildingManager is null"));
+		return;
+	}
+
+	ClearLayout();
+
+	constexpr float CellSize = 100.f;
+	const FVector   FloorOrigin = GetActorLocation();
+
+	for (const FRoomPlacement& Placement : RoomPlacements)
+	{
+		if (!Placement.RoomClass)
+		{
+			DevLog->LogImportant(TEXT("GenerateLayoutWith: Placement has no RoomClass, skipping"), EBGLogCategory::Generation);
+			continue;
+		}
+
+		const FVector    WorldPos      = FloorOrigin + FVector(Placement.GridOrigin.X * CellSize, Placement.GridOrigin.Y * CellSize, 0.f);
+		const FTransform SpawnTransform(FRotator(0.f, static_cast<float>(Placement.RotationDegrees), 0.f), WorldPos);
+
+		AMasterRoom* Room = BuildingManager->RequestRoomSpawn(
+			Placement.RoomClass, SpawnTransform, Placement, RoomHeightCm);
+
+		if (IsValid(Room))
+		{
+			SpawnedRooms.Add(Room);
+		}
+	}
+
+	DevLog->LogImportant(
+		FString::Printf(TEXT("GenerateLayoutWith: Spawned %d room(s) on FloorIndex %d"), SpawnedRooms.Num(), FloorIndex),
+		EBGLogCategory::Generation);
+}
+
+void AFloorManager::ClearLayout()
+{
+	for (TObjectPtr<AMasterRoom>& Room : SpawnedRooms)
+	{
+		if (IsValid(Room))
+		{
+			Room->Destroy();
+		}
+	}
+	SpawnedRooms.Empty();
+}
+
+// ============================================================
 // Editor
 // ============================================================
 
@@ -331,11 +385,10 @@ void AFloorManager::PreviewLayout()
 
 void AFloorManager::GenerateLayout()
 {
-	if (!IsValid(OwningBuildingManager))
-	{
-		DevLog->LogCritical(TEXT("GenerateLayout: OwningBuildingManager is not set — assign it in the Details panel"));
-		return;
-	}
+	// Standalone editor path: spawns directly with seed 0 for layout testing.
+	// For full building generation with the correct seed, use ABuildingManager::SpawnBuilding.
+	UWorld* World = GetWorld();
+	if (!World) return;
 
 	ClearLayout();
 
@@ -353,30 +406,21 @@ void AFloorManager::GenerateLayout()
 		const FVector    WorldPos      = FloorOrigin + FVector(Placement.GridOrigin.X * CellSize, Placement.GridOrigin.Y * CellSize, 0.f);
 		const FTransform SpawnTransform(FRotator(0.f, static_cast<float>(Placement.RotationDegrees), 0.f), WorldPos);
 
-		AMasterRoom* Room = OwningBuildingManager->RequestRoomSpawn(
-			Placement.RoomClass, SpawnTransform, Placement, RoomHeightCm);
+		FActorSpawnParameters Params;
+		Params.Owner = this;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
+		AMasterRoom* Room = World->SpawnActor<AMasterRoom>(Placement.RoomClass, SpawnTransform, Params);
 		if (IsValid(Room))
 		{
+			Room->InitializeRoom(Placement, 0 /* seed 0: standalone preview */, RoomHeightCm);
 			SpawnedRooms.Add(Room);
 		}
 	}
 
 	DevLog->LogImportant(
-		FString::Printf(TEXT("GenerateLayout: Spawned %d room(s) on FloorIndex %d"), SpawnedRooms.Num(), FloorIndex),
+		FString::Printf(TEXT("GenerateLayout: Spawned %d room(s) on FloorIndex %d (standalone, seed=0)"), SpawnedRooms.Num(), FloorIndex),
 		EBGLogCategory::Generation);
-}
-
-void AFloorManager::ClearLayout()
-{
-	for (TObjectPtr<AMasterRoom>& Room : SpawnedRooms)
-	{
-		if (IsValid(Room))
-		{
-			Room->Destroy();
-		}
-	}
-	SpawnedRooms.Empty();
 }
 
 void AFloorManager::ClearPreview()

@@ -18,7 +18,7 @@ stop and ask before writing code. Do not make architectural assumptions.
 
 ## 1. Project Identity
 
-An open-world, enterable building generation system for Unreal Engine 5 (currently 5.7).
+An open-world, enterable building generation system for Unreal Engine 5 (currently 5.8).
 Buildings are placed at arbitrary world locations — never at world origin.
 Target: C++ with full Blueprint exposure. Multiplayer baseline: 4-player co-op.
 Single-player must also work without code changes.
@@ -42,21 +42,33 @@ ABuildingManager          — root actor, placed in world by designer
 - Placed by designer at any world location. Origin = ActorLocation. Never world 0,0,0.
 - Sole caller of SpawnActor for AFloorManager and AMasterRoom instances.
 - Only spawns under HasAuthority(). Clients never call SpawnActor for these classes.
-- Owns the exterior wall mesh (separate UStaticMesh* from UWallData).
+- Reads floor layout from BuildingDataAsset (UBuildingData*). Designers configure all
+  floors and room placements in that DataAsset — no AFloorManager actors are placed in the level.
+- SpawnFloorManagersFromAsset() (private) spawns one AFloorManager per FFloorDefinition entry,
+  positioning each at the **cumulative Z** of all floors below it (sum of RoomHeightCm values,
+  not FloorIndex × a single height). Sets FloorIndex, RoomHeightCm, FloorGridSize, RoomPlacements
+  on each spawned actor immediately after spawn.
+- Holds SpawnedFloorManagers (TArray, runtime-only, BlueprintReadOnly — not designer-set).
 - Holds GenerationSeed (int32, Replicated). All geometry derives from this seed.
+- Owns the exterior wall mesh (separate UStaticMesh* from UWallData).
 - After all rooms on a floor generate, detects exterior-facing wall cells and:
   1. Calls AMasterRoom::SuppressExteriorWallISM(Face) on those cells
   2. Places the exterior skin mesh ISMC at those positions
 - Validates the vertical connection graph (staircases/elevators) before any generation.
 
 ### AFloorManager
-- One instance per building floor. Origin offset from BuildingManager by FloorIndex x FloorHeightCm.
-- Holds TArray<FRoomPlacement> RoomPlacements — the designer-authored layout.
-- Holds RoomHeightCm (int32, EditAnywhere) — all rooms on this floor share this height.
-  This value drives wall stack placement and ceiling Z offset for every AMasterRoom on the floor.
-- Does NOT spawn actors directly. Calls ABuildingManager::RequestRoomSpawn().
-- Provides WITH_EDITOR PreviewLayout and GenerateLayout buttons (CallInEditor).
-- Runs validation pass in PreviewLayout — see Section 6 for validation rules.
+- Spawned at runtime by ABuildingManager::SpawnFloorManagersFromAsset(). Not placed in the
+  level by designers. Properties are pushed from FFloorDefinition immediately after spawn.
+- Holds TArray<FRoomPlacement> RoomPlacements — set by BuildingManager from DataAsset.
+- Holds RoomHeightCm (int32) — all rooms on this floor share this height.
+- Does NOT spawn actors directly. Routes through ABuildingManager::RequestRoomSpawn().
+- GenerateLayoutWith(ABuildingManager*) — non-editor method, called by ABuildingManager::SpawnBuilding.
+  Also the server-side entry point for Step 8+ multiplayer generation.
+- GenerateLayout() (CallInEditor) — standalone editor test: spawns rooms with seed 0 without
+  needing a BuildingManager. For per-floor testing only.
+- ClearLayout() — non-editor, BlueprintCallable+CallInEditor. Destroys SpawnedRooms.
+- Provides WITH_EDITOR PreviewLayout and ClearPreview buttons (CallInEditor).
+- Runs validation pass in PreviewLayout — see Section 9 for validation rules.
 
 ### AMasterRoom
 - Owns all ISMCs: FloorISMC, CeilingISMC, FlavorISMC (fixed, created in constructor). WallISMCPool (TArray) populated dynamically during PlaceWallMeshStacks — one ISMC per unique static mesh encountered.
@@ -88,12 +100,30 @@ ABuildingManager          — root actor, placed in world by designer
 All designer configuration lives in UDataAsset subclasses. One URoomData = one room style.
 
 ```
-URoomData
+UBuildingData                    ← one asset per building type
+  └── FFloorDefinition[]         ← one entry per floor (FloorClass + layout)
+        └── FRoomPlacement[]     ← one entry per room on that floor
+
+URoomData                        ← one asset per room style
   ├── UFloorData        (mesh set for floors)
   ├── UCeilingData      (mesh set for ceilings — same struct as UFloorData)
   ├── UWallData         (4-piece wall stack)
   └── UDoorData         (door mesh + interaction config)
 ```
+
+### UBuildingData / FFloorDefinition
+
+`UBuildingData` is a `UDataAsset` assigned to `ABuildingManager::BuildingDataAsset`. It holds
+the full floor/room layout for one building type. `BuildingData.h` includes `FloorManager.h`
+(for `TSubclassOf<AFloorManager>`); `FloorManager.h` does NOT include `BuildingData.h` — no
+circular dependency.
+
+| FFloorDefinition field | Type | Notes |
+|---|---|---|
+| FloorClass | TSubclassOf\<AFloorManager\> | Subclass to spawn for this floor. Null = base AFloorManager |
+| RoomHeightCm | int32 | Height of all rooms on this floor in cm |
+| FloorGridSize | FIntPoint | Bounding cell area; PreviewLayout rejects rooms outside this |
+| RoomPlacements | TArray\<FRoomPlacement\> | Room layout — same struct AFloorManager uses directly |
 
 ### URoomData fields
 | Field | Type | Notes |
@@ -320,11 +350,14 @@ TArray<bool> DoorStates;
 ```
 
 ### SpawnActor pattern — always use this, never deviate
+
+**Room spawning** — called by `AFloorManager::GenerateLayoutWith`:
 ```cpp
 AMasterRoom* ABuildingManager::RequestRoomSpawn(
     TSubclassOf<AMasterRoom> RoomClass,
     const FTransform& SpawnTransform,
-    const FRoomPlacement& Placement)
+    const FRoomPlacement& Placement,
+    int32 FloorRoomHeightCm)
 {
     if (!HasAuthority()) return nullptr;
 
@@ -338,10 +371,21 @@ AMasterRoom* ABuildingManager::RequestRoomSpawn(
 
     if (Room)
     {
-        Room->InitializeRoom(Placement, GenerationSeed);
+        Room->InitializeRoom(Placement, GenerationSeed, FloorRoomHeightCm);
     }
     return Room;
 }
+```
+
+**Floor manager spawning** — called by `GenerateBuilding` / `SpawnBuilding` (see `SpawnFloorManagersFromAsset` in `BuildingManager.cpp`):
+```cpp
+// Key steps inside SpawnFloorManagersFromAsset():
+//   1. Destroy existing SpawnedFloorManagers (ClearLayout + Destroy each)
+//   2. For each FFloorDefinition in BuildingDataAsset->Floors:
+//        a. Spawn AFloorManager at (BuildingOrigin + FVector(0,0,CumulativeHeight))
+//        b. Set Floor->FloorIndex, RoomHeightCm, FloorGridSize, RoomPlacements
+//        c. CumulativeHeight += Def.RoomHeightCm
+//   3. Return false if BuildingDataAsset is null or Floors is empty
 ```
 
 ---
@@ -402,10 +446,16 @@ Examples in this project: `AFloorManager::Visualizer` and `AMasterRoom::Visualiz
 the entire `UBGVisualizer` component (`WITH_EDITORONLY_DATA`), and the CallInEditor button
 functions below (`WITH_EDITOR` is acceptable for those since they are code, not data).
 
-AFloorManager exposes two CallInEditor buttons:
-- PreviewLayout — runs validation, draws debug grid, no actors spawned
-- GenerateLayout — commits full generation, spawns actors and places meshes
-- ClearLayout — destroys all spawned room actors for this floor
+AFloorManager CallInEditor buttons:
+- PreviewLayout — runs validation, draws floor grid and room footprints; no actors spawned
+- GenerateLayout — standalone editor test: spawns rooms directly with seed 0 (no BuildingManager required)
+- ClearLayout — non-editor (BlueprintCallable+CallInEditor): destroys all SpawnedRooms
+- ClearPreview — flushes all persistent debug lines and text components
+
+ABuildingManager CallInEditor buttons:
+- GenerateBuilding — SpawnFloorManagersFromAsset + PreviewLayout on each floor (grid only, no geometry)
+- SpawnBuilding — SpawnFloorManagersFromAsset + GenerateLayoutWith(this) on each floor (full geometry)
+- ClearBuilding — ClearLayout + ClearPreview + Destroy on each SpawnedFloorManager
 
 Debug draw uses DrawDebugBox and DrawDebugString.
 TextRenderer coordinate display from the previous grid visualizer project
@@ -528,6 +578,24 @@ if (Target.bBuildEditor)
   RightColumnYaw fields to UDoorData when new wall style assets expose the misalignment.
   See DEVDOC.md Section 9.2. **DEFERRED — not blocking any current step.**
 
+- **OwningBuildingManager on AFloorManager**: ~~Should AFloorManager hold a back-reference
+  to ABuildingManager so GenerateLayout can call RequestRoomSpawn?~~
+  **REMOVED.** The `OwningBuildingManager` UPROPERTY was deleted entirely. AFloorManager now
+  has two generation paths: `GenerateLayoutWith(ABuildingManager*)` (non-editor, called by
+  BuildingManager directly) and `GenerateLayout()` (CallInEditor standalone, spawns with
+  seed 0 directly — no BuildingManager needed). This eliminates the designer requirement to
+  set a level-actor reference and removes any potential circular initialization order issues.
+
+- **FloorManager placement strategy**: ~~Should FloorManagers be placed in the level by
+  the designer and referenced by ABuildingManager::FloorManagers array?~~
+  **REPLACED with DataAsset-driven spawning.** `ABuildingManager::FloorManagers`
+  (level-actor references) was removed. `ABuildingManager::BuildingDataAsset` (a
+  `UBuildingData*`) is now the sole designer-set property. `SpawnFloorManagersFromAsset()`
+  spawns one AFloorManager per `FFloorDefinition` entry at runtime, positioning each floor
+  at the cumulative Z of all floors below it. `FFloorDefinition` mirrors `FRoomPlacement`
+  in structure: designers configure everything (FloorClass, RoomHeightCm, RoomPlacements)
+  inside the DataAsset. No level-placed FloorManager actors are needed.
+
 ---
 
 ## 13. Implementation Status
@@ -538,9 +606,9 @@ Track progress here. Update this section as steps complete.
 - [x] **Step 2** — AMasterRoom grid + cell classification (no mesh placement, debug draw only)
 - [x] **Step 3/3b** — Uniform floor + ceiling fill: exhaustive pool-based weighted random, multi-mesh support, both footprint orientations always tried for non-square meshes (AllowRotation only controls start order), 1×1 fallback recommended; EFloorFillMode (Random/Uniform) on UFloorData/UCeilingData; UCeilingData::RoomHeightCm removed (ceiling Z from AMasterRoom::RoomHeightCm); PreviewRoomHeightCm added for editor preview
 - [x] **Step 4** — Wall mesh stack placement + corner pieces + door mesh placement: bin-packed wall modules (BottomBackCenter pivot), CornerMesh on UWallData (BottomCenter, 0°/90°/180°/270° per corner, shares WallISMCPool); EDoorWidth (TwoCell/FourCell) on UDoorData; DoorMesh placed spanning width via MakeWallTransform; ColumnMesh at flanking cells (always suppresses wall module, mesh placed only when set); DoorPlacementOffset + ColumnPlacementOffset; GetEffectiveDoorData + GetDoorWidthCells + FindColumnForPos helpers
-- [x] **Step 5** — FRoomPlacement + FDoorPlacement structs + AFloorManager Details panel: AFloorManager class with RoomPlacements, RoomHeightCm, FloorGridSize, FloorIndex; SpawnedRooms runtime array; WITH_EDITOR CallInEditor stubs for PreviewLayout/GenerateLayout/ClearLayout (ClearLayout fully implemented)
+- [x] **Step 5** — FRoomPlacement + FDoorPlacement structs + AFloorManager Details panel: AFloorManager class with RoomPlacements, RoomHeightCm, FloorGridSize, FloorIndex; SpawnedRooms runtime array; ClearLayout non-editor (BlueprintCallable+CallInEditor); WITH_EDITOR stubs for PreviewLayout/GenerateLayout/ClearPreview
 - [x] **Step 6** — WITH_EDITOR PreviewLayout debug visualization: draws full floor grid (outer boundary, interior lines, coordinate labels every 5 cells); draws each room footprint green/red; runs 5 validation checks (out of bounds, room overlap, orphan door, exterior door on non-perimeter face, misaligned shared doors); staircase landing check deferred to Step 10; persistent debug lines (Duration=-1), ClearPreview button flushes via FlushPersistentDebugLines + FlushDebugStrings
-- [x] **Step 7** — ABuildingManager SpawnActor authority + AFloorManager spawning: ABuildingManager with GenerationSeed (Replicated), RequestRoomSpawn (HasAuthority guard, AlwaysSpawn), GetLifetimeReplicatedProps; GenerateBuilding/ClearBuilding editor buttons iterate FloorManagers; AFloorManager::GenerateLayout calls RequestRoomSpawn per placement, stores in SpawnedRooms; OwningBuildingManager reference on AFloorManager (set by designer or by BuildingManager at runtime)
+- [x] **Step 7** — ABuildingManager authority + DataAsset-driven generation: RequestRoomSpawn (HasAuthority, AlwaysSpawn, FloorRoomHeightCm param); GenerationSeed (Replicated), GetLifetimeReplicatedProps; UBuildingData + FFloorDefinition (FloorClass, RoomHeightCm, FloorGridSize, RoomPlacements); SpawnFloorManagersFromAsset (cumulative Z, falls back to base AFloorManager class if FloorClass null); three editor buttons: GenerateBuilding (grids only via PreviewLayout), SpawnBuilding (geometry via GenerateLayoutWith), ClearBuilding; AFloorManager::GenerateLayoutWith (non-editor, called by BuildingManager); standalone GenerateLayout (CallInEditor, seed 0, no BuildingManager); OwningBuildingManager removed
 - [ ] **Step 8** — Multiplayer replication: seed replication, client-side regen, door RPC
 - [ ] **Step 9** — BSP fill pass (port from existing Blueprint dungeon generator)
 - [ ] **Step 10** — AHallwayRoom, AStaircaseRoom subclasses
@@ -616,6 +684,3 @@ After any significant decision, architectural change, or completed implementatio
 
 Keeping CLAUDE.md current is what makes the next session productive.
 A stale CLAUDE.md is worse than no CLAUDE.md.
-
-update project
-

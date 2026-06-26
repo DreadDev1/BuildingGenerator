@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "FloorManager.h"
 #include "RoomPlacement.h"
 #include "BuildingData.generated.h"
 
@@ -12,6 +13,11 @@ USTRUCT(BlueprintType)
 struct BUILDINGGENERATOR_API FFloorDefinition
 {
 	GENERATED_BODY()
+
+	// Which AFloorManager subclass to spawn for this floor.
+	// Leave null to use the base AFloorManager class.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Floor")
+	TSubclassOf<AFloorManager> FloorClass;
 
 	// Height of every room on this floor in cm.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Floor", meta = (ClampMin = "100"))
