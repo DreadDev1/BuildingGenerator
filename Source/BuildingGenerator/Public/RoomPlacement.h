@@ -59,4 +59,8 @@ struct BUILDINGGENERATOR_API FRoomPlacement
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bIsEntranceRoom = false;
+
+	// Forced floor placements for this room only. They win over RoomData's list where they overlap.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FForcedPlacement> ForcedPlacements;
 };

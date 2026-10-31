@@ -137,7 +137,7 @@ circular dependency.
 | MaxRoomSize | FIntPoint | cells |
 | FlavorMeshes | TArray\<UStaticMesh*\> | ISM decoration pool |
 | FlavorDensity | float | 0.0–1.0 |
-| ForcedPlacements | TArray\<FForcedPlacement\> | applied after base generation |
+| ForcedPlacements | TArray\<FForcedPlacement\> | floor meshes pinned to cells for every room using this RoomData; placed before the random floor fill (FRoomPlacement has its own per-room list) |
 
 ### UFloorData / UCeilingData — asset-level fields
 | Field | Type | Notes |
@@ -280,16 +280,19 @@ struct FForcedPlacement
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    FIntPoint CellPosition;   // local to room grid
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FIntPoint CellPosition;   // footprint origin cell (lowest X,Y), same as the Visualizer coordinate labels
     UStaticMesh* Mesh;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    float RotationYaw = 0.f;
+    int32 CellsX = 0;         // mesh's own size in cells (like FloorData), 0 = from bounds (rounded up)
+    int32 CellsY = 0;
+    float RotationYaw = 0.f;  // 0/90/180/270; 90/270 swap the footprint; rotated bounds' low corner aligned to the origin cell
 };
 ```
+Lists: `URoomData::ForcedPlacements` (every room using the asset) and `FRoomPlacement::ForcedPlacements`
+(one room; includes MasterRoom PreviewPlacement). Floors: `PlaceForcedFloorMeshes` runs inside Step 3
+before the random fill — per-room entries first, then RoomData entries; each claims its cells and the
+fill works around them. An entry is skipped with a DevLog warning if it has no mesh, leaves the floor
+cells (wall ring / out of range), or overlaps an earlier forced entry. Wall-module overrides are next
+(Step 6 is reserved for them).
 
 ---
 
@@ -304,7 +307,7 @@ AHallwayRoom skips step 7 (flavor). AStaircaseRoom adds stair mesh in step 6.
 3. **PlaceFloorMeshes()** — fill FloorCells using URoomData::FloorData weighted random (FRandomStream seeded from GenerationSeed)
 4. **PlaceCeilingMeshes()** — mirror floor pass at RoomHeight Z offset
 5. **PlaceWallMeshStacks()** — per face, per position: column cell (CellOffset±Width) → place ColumnMesh or leave empty (always suppresses wall module); door start → place DoorMesh spanning DoorWidth cells; else → bin-pack UWallData modules (available run stops at column and door span positions); then place CornerModule (or the legacy CornerMesh) at all four corners
-6. **ApplyForcedPlacements()** — override cells from URoomData::ForcedPlacements
+6. **ApplyForcedPlacements()** — reserved for forced wall modules (forced floor meshes are placed in Step 3, before the fill)
 7. **PlaceFlavorMeshes()** — fill remaining interior cells from FlavorMeshes pool at FlavorDensity
 8. **SpawnDoorTriggers()** — for each door in ActivePlacement.Doors, create replicated UBoxComponent trigger
 
@@ -327,7 +330,7 @@ nodes fall below MinSubdivisionSize. Fills each leaf with one weighted random me
 Used for interior floor variety — not for dungeon layout. Ported from existing
 Blueprint dungeon generator project.
 
-Both types run ForcedPlacements as a post-pass override.
+Both types place forced floor meshes first and fill around them.
 
 ---
 

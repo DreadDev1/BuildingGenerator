@@ -123,7 +123,8 @@ protected:
 	void PlaceWallMeshStacks();
 	virtual void PlaceWallMeshStacks_Implementation();
 
-	// Step 6 — apply URoomData::ForcedPlacements overrides
+	// Step 6 — reserved for forced wall-module overrides. Forced floor meshes are placed in Step 3,
+	// before the random fill (see PlaceForcedFloorMeshes).
 	UFUNCTION(BlueprintNativeEvent, Category = "MasterRoom|Generation")
 	void ApplyForcedPlacements();
 	virtual void ApplyForcedPlacements_Implementation();
@@ -163,6 +164,11 @@ protected:
 private:
 	void GenerateRoomInterior();
 
+	// Destroys every generated ISMC (floor / ceiling / wall pools and any stray ones from earlier runs)
+	// and empties the pools, so each generation starts from fresh components. Re-using components with
+	// ClearInstances + AddInstance in the same frame can leave stale instances drawn in the editor.
+	void ResetGeneratedMeshes();
+
 	// ----------------------------------------------------------------
 	// Seed offsets — XOR with GenerationSeed per step so each step's
 	// FRandomStream is independent regardless of how many values the
@@ -181,6 +187,18 @@ private:
 	// Returns true if a mesh footprint (CellsX × CellsY) fits at (X, Y):
 	// every covered cell must be ECellType::Floor and unclaimed.
 	bool CanPlaceMesh(int32 X, int32 Y, int32 CellsX, int32 CellsY, const TArray<bool>& Claimed) const;
+
+	// Places ActivePlacement.ForcedPlacements, then RoomData->ForcedPlacements, into floor cells and
+	// claims them so the random fill works around them. Entries that are out of range, off the floor
+	// cells, or overlap an earlier forced placement are skipped with a DevLog warning.
+	void PlaceForcedFloorMeshes(TArray<bool>& Claimed);
+
+	// Footprint in room cells (after RotationYaw) and the instance transform for one forced placement.
+	// Returns false if the entry has no mesh.
+	bool GetForcedFloorPlacement(const struct FForcedPlacement& FP, int32& OutCellsX, int32& OutCellsY, FTransform& OutXform) const;
+
+	// Per-room entries first, then RoomData entries.
+	void GatherForcedPlacements(TArray<const struct FForcedPlacement*>& Out) const;
 
 	// Marks all cells in the (CellsX × CellsY) footprint at (X, Y) as claimed.
 	void ClaimCells(int32 X, int32 Y, int32 CellsX, int32 CellsY, TArray<bool>& Claimed);

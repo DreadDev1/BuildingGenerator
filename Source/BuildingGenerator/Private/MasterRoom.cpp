@@ -52,6 +52,7 @@ void AMasterRoom::GenerateRoomInterior()
 {
 	DevLog->LogSectionHeader(TEXT("GenerateRoomInterior"));
 
+	ResetGeneratedMeshes();
 	BuildGrid();
 	ClassifyCells();
 	PlaceFloorMeshes();
@@ -199,6 +200,9 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 
 	TArray<bool> Claimed;
 	Claimed.Init(false, CellGrid.Num());
+
+	// Designer-forced meshes go first; the fill below skips their cells.
+	PlaceForcedFloorMeshes(Claimed);
 
 	int32 PlacedCount   = 0;
 	int32 FallbackCount = 0;
@@ -579,7 +583,77 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 	DevLog->LogStatistic(TEXT("Fallback 1x1 cells"),        FallbackCount, EBGLogCategory::Mesh);
 	DevLog->LogStatistic(TEXT("Skipped unfillable cells"),  SkippedCount,  EBGLogCategory::Mesh);
 }
-void AMasterRoom::ApplyForcedPlacements_Implementation(){}
+void AMasterRoom::ApplyForcedPlacements_Implementation(){}  // floors: see PlaceForcedFloorMeshes (Step 3)
+
+void AMasterRoom::GatherForcedPlacements(TArray<const FForcedPlacement*>& Out) const
+{
+	Out.Reset();
+	for (const FForcedPlacement& FP : ActivePlacement.ForcedPlacements) Out.Add(&FP);
+	if (IsValid(ActivePlacement.RoomDataAsset))
+	{
+		for (const FForcedPlacement& FP : ActivePlacement.RoomDataAsset->ForcedPlacements) Out.Add(&FP);
+	}
+}
+
+bool AMasterRoom::GetForcedFloorPlacement(const FForcedPlacement& FP, int32& OutCellsX, int32& OutCellsY, FTransform& OutXform) const
+{
+	if (!IsValid(FP.Mesh)) return false;
+	constexpr float CellSize = 100.f;
+
+	// Footprint: the mesh's own size in cells (entered, or from its bounds), swapped at 90 / 270.
+	const FBox MB = FP.Mesh->GetBoundingBox();
+	const int32 AutoX = FMath::Max(1, FMath::CeilToInt((MB.Max.X - MB.Min.X) / CellSize - 0.01f));
+	const int32 AutoY = FMath::Max(1, FMath::CeilToInt((MB.Max.Y - MB.Min.Y) / CellSize - 0.01f));
+	OutCellsX = FP.CellsX > 0 ? FP.CellsX : AutoX;
+	OutCellsY = FP.CellsY > 0 ? FP.CellsY : AutoY;
+	const float YawMod = FMath::Fmod(FMath::Abs(FP.RotationYaw), 180.f);
+	if (FMath::Abs(YawMod - 90.f) < 1.f) Swap(OutCellsX, OutCellsY);
+
+	// Rotate, then move the rotated bounds' low corner onto the origin cell's corner. Full-cell meshes
+	// end up centred on their footprint as before; half-cell meshes sit flush to the origin cell.
+	const FRotator Rot(0.f, FP.RotationYaw, 0.f);
+	const FBox RB = MB.TransformBy(FTransform(Rot));
+	const FVector Loc(FP.CellPosition.X * CellSize - RB.Min.X, FP.CellPosition.Y * CellSize - RB.Min.Y, 0.f);
+	OutXform = FTransform(Rot, Loc);
+	return true;
+}
+
+void AMasterRoom::PlaceForcedFloorMeshes(TArray<bool>& Claimed)
+{
+	TArray<const FForcedPlacement*> List;
+	GatherForcedPlacements(List);
+
+	int32 Placed = 0;
+	for (int32 i = 0; i < List.Num(); ++i)
+	{
+		const FForcedPlacement& FP = *List[i];
+		const FIntPoint C = FP.CellPosition;
+		int32 CX = 1, CY = 1;
+		FTransform Xform;
+
+		if (!GetForcedFloorPlacement(FP, CX, CY, Xform))
+		{
+			DevLog->LogImportant(FString::Printf(TEXT("ForcedPlacement %d at (%d,%d): no mesh set — skipped"), i, C.X, C.Y), EBGLogCategory::Mesh);
+			continue;
+		}
+		if (C.X < 0 || C.Y < 0 || !CanPlaceMesh(C.X, C.Y, CX, CY, Claimed))
+		{
+			DevLog->LogImportant(FString::Printf(
+				TEXT("ForcedPlacement %d (%s) at (%d,%d) size %dx%d does not fit: it must lie on free floor cells inside the wall ring (floor cells are 1..%d, 1..%d) — skipped"),
+				i, *GetNameSafe(FP.Mesh), C.X, C.Y, CX, CY, RoomGridSize.X - 2, RoomGridSize.Y - 2), EBGLogCategory::Mesh);
+			continue;
+		}
+
+		GetOrCreateFloorISMC(FP.Mesh)->AddInstance(Xform);
+		ClaimCells(C.X, C.Y, CX, CY, Claimed);
+		++Placed;
+	}
+
+	if (List.Num() > 0)
+	{
+		DevLog->LogStatistic(TEXT("Forced floor placements"), Placed, EBGLogCategory::Mesh);
+	}
+}
 void AMasterRoom::PlaceFlavorMeshes_Implementation()    {}
 void AMasterRoom::SpawnDoorTriggers_Implementation()    {}
 
@@ -976,6 +1050,8 @@ UInstancedStaticMeshComponent* AMasterRoom::GetOrCreateFloorISMC(UStaticMesh* Me
 	UInstancedStaticMeshComponent* NewISMC = NewObject<UInstancedStaticMeshComponent>(this);
 	NewISMC->SetStaticMesh(Mesh);
 	NewISMC->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	NewISMC->CreationMethod = EComponentCreationMethod::Instance;
+	AddInstanceComponent(NewISMC);
 	NewISMC->RegisterComponent();
 	FloorISMCPool.Add(NewISMC);
 	return NewISMC;
@@ -994,6 +1070,8 @@ UInstancedStaticMeshComponent* AMasterRoom::GetOrCreateCeilingISMC(UStaticMesh* 
 	UInstancedStaticMeshComponent* NewISMC = NewObject<UInstancedStaticMeshComponent>(this);
 	NewISMC->SetStaticMesh(Mesh);
 	NewISMC->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	NewISMC->CreationMethod = EComponentCreationMethod::Instance;
+	AddInstanceComponent(NewISMC);
 	NewISMC->RegisterComponent();
 	CeilingISMCPool.Add(NewISMC);
 	return NewISMC;
@@ -1012,6 +1090,8 @@ UInstancedStaticMeshComponent* AMasterRoom::GetOrCreateWallISMC(UStaticMesh* Mes
 	UInstancedStaticMeshComponent* NewISMC = NewObject<UInstancedStaticMeshComponent>(this);
 	NewISMC->SetStaticMesh(Mesh);
 	NewISMC->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	NewISMC->CreationMethod = EComponentCreationMethod::Instance;
+	AddInstanceComponent(NewISMC);
 	NewISMC->RegisterComponent();
 	WallISMCPool.Add(NewISMC);
 	return NewISMC;
@@ -1030,6 +1110,27 @@ void AMasterRoom::SuppressExteriorWallISM(ERoomFace Face)
 // Mesh Fill Helpers
 // ============================================================
 
+void AMasterRoom::ResetGeneratedMeshes()
+{
+	// Generated ISMCs are created at runtime (Native / Instance creation method). Leave default
+	// subobjects (FlavorISMC) and anything a Blueprint adds through its construction script alone.
+	TArray<UInstancedStaticMeshComponent*> All;
+	GetComponents<UInstancedStaticMeshComponent>(All);
+	for (UInstancedStaticMeshComponent* ISMC : All)
+	{
+		if (!IsValid(ISMC)) continue;
+		ISMC->ClearInstances();
+		if (ISMC == FlavorISMC || ISMC->IsDefaultSubobject()) continue;
+		if (ISMC->CreationMethod == EComponentCreationMethod::SimpleConstructionScript ||
+			ISMC->CreationMethod == EComponentCreationMethod::UserConstructionScript) continue;
+
+		RemoveInstanceComponent(ISMC);
+		ISMC->DestroyComponent();
+	}
+	FloorISMCPool.Reset();
+	CeilingISMCPool.Reset();
+	WallISMCPool.Reset();
+}
 bool AMasterRoom::CanPlaceMesh(int32 X, int32 Y, int32 CellsX, int32 CellsY, const TArray<bool>& Claimed) const
 {
 	// Reject if footprint would exceed grid bounds
@@ -1139,39 +1240,15 @@ bool AMasterRoom::IsDoorCell(int32 X, int32 Y) const
 
 void AMasterRoom::PreviewRoom()
 {
-	for (UInstancedStaticMeshComponent* ISMC : FloorISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : CeilingISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : WallISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	FlavorISMC->ClearInstances();
 	if (Visualizer) Visualizer->ClearDebugDrawings();
 
+	// GenerateRoomInterior starts with ResetGeneratedMeshes, so every preview uses fresh components.
 	InitializeRoom(PreviewPlacement, PreviewSeed, PreviewRoomHeightCm);
 }
 
 void AMasterRoom::ClearPreview()
 {
-	for (UInstancedStaticMeshComponent* ISMC : FloorISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : CeilingISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : WallISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	FlavorISMC->ClearInstances();
+	ResetGeneratedMeshes();
 	if (Visualizer) Visualizer->ClearDebugDrawings();
 }
 
@@ -1224,12 +1301,23 @@ void AMasterRoom::BuildDoorCells(TArray<FIntPoint>& OutCells) const
 void AMasterRoom::BuildCustomCells(TArray<FIntPoint>& OutCells) const
 {
 	OutCells.Reset();
-	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
-	if (!IsValid(RoomData)) return;
+	TArray<const FForcedPlacement*> List;
+	GatherForcedPlacements(List);
 
-	for (const FForcedPlacement& FP : RoomData->ForcedPlacements)
+	// Every cell of each footprint, so the whole forced area shows yellow.
+	for (const FForcedPlacement* FP : List)
 	{
-		OutCells.Add(FP.CellPosition);
+		int32 CX = 1, CY = 1;
+		FTransform Unused;
+		if (!GetForcedFloorPlacement(*FP, CX, CY, Unused)) continue;
+		for (int32 DY = 0; DY < CY; ++DY)
+		{
+			for (int32 DX = 0; DX < CX; ++DX)
+			{
+				const FIntPoint C(FP->CellPosition.X + DX, FP->CellPosition.Y + DY);
+				if (C.X >= 0 && C.Y >= 0 && C.X < RoomGridSize.X && C.Y < RoomGridSize.Y) OutCells.AddUnique(C);
+			}
+		}
 	}
 }
 
