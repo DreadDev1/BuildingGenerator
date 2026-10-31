@@ -847,10 +847,16 @@ Pin a specific floor mesh to a cell and the room fills around it.
 3. Fill in the entry:
    - **CellPosition** — the footprint's lowest `(X,Y)` cell, e.g. `4,8`.
    - **Mesh** — any floor mesh (it does not need to be in the FloorData).
-   - **CellsX / CellsY** — how many cells it covers along X and Y *as it sits in the room*.
-   - **RotationYaw** — 0 / 90 / 180 / 270, turned around the footprint centre. A 2 x 4 tile turned
-     90 degrees is entered as CellsX 4, CellsY 2.
+   - **CellsX / CellsY** — the mesh's own size in cells, the same way FloorData entries are entered
+     (a 1 x 2 tile is CellsX 1, CellsY 2). Leave them at **0** to take the size from the mesh; a half-cell
+     strip (0.5 x 4) counts as 1 x 4.
+   - **RotationYaw** — 0 / 90 / 180 / 270. At 90 / 270 the footprint swaps (a 1 x 2 at 90 covers 2 x 1).
+     The footprint always grows from the origin cell toward +X / +Y.
 4. Press **PreviewRoom** again. The forced cells show yellow and the random fill skips them.
+
+The mesh is lined up by its own edges with the origin cell's low corner, so full-cell tiles fill their
+footprint exactly and half-cell strips sit flush against the origin cell's low X / low Y edge. A half-cell
+strip still claims whole cells, so the other half of those cells stays empty.
 
 Rules: the footprint must stay on floor cells (inside the wall ring: X 1..SizeX-2, Y 1..SizeY-2).
 An entry that leaves the floor, overlaps an earlier forced entry, or has no mesh is skipped and the

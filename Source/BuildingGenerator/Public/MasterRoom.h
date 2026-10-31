@@ -193,6 +193,10 @@ private:
 	// cells, or overlap an earlier forced placement are skipped with a DevLog warning.
 	void PlaceForcedFloorMeshes(TArray<bool>& Claimed);
 
+	// Footprint in room cells (after RotationYaw) and the instance transform for one forced placement.
+	// Returns false if the entry has no mesh.
+	bool GetForcedFloorPlacement(const struct FForcedPlacement& FP, int32& OutCellsX, int32& OutCellsY, FTransform& OutXform) const;
+
 	// Per-room entries first, then RoomData entries.
 	void GatherForcedPlacements(TArray<const struct FForcedPlacement*>& Out) const;
 

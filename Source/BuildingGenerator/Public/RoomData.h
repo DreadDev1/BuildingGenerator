@@ -19,7 +19,10 @@ enum class ERoomGenerationType : uint8
 // A designer-chosen floor mesh pinned to a grid cell. Forced placements are placed before the random
 // floor fill, which then fills the remaining floor cells around them.
 // CellPosition is the footprint's origin cell: the lowest (X,Y) it covers, as shown by the
-// Visualizer's coordinate labels. CellsX x CellsY is the footprint as it sits in the room.
+// Visualizer's coordinate labels. CellsX x CellsY is the mesh's own size in cells (like a FloorData
+// entry); a 90 / 270 RotationYaw swaps them, so the footprint always grows from the origin cell
+// toward +X / +Y. The mesh is aligned by its bounds to the origin cell's corner, so a half-cell
+// mesh (e.g. 0.5 x 4) sits flush against the origin cell's low edges.
 USTRUCT(BlueprintType)
 struct BUILDINGGENERATOR_API FForcedPlacement
 {
@@ -32,16 +35,17 @@ struct BUILDINGGENERATOR_API FForcedPlacement
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement")
 	TObjectPtr<UStaticMesh> Mesh = nullptr;
 
-	// Footprint size in cells along the room's X axis.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement", meta = (ClampMin = "1"))
-	int32 CellsX = 1;
+	// The mesh's own size in cells along its X axis, before RotationYaw. 0 = work it out from the
+	// mesh bounds (rounded up, so a 50 cm strip counts as 1 cell).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement", meta = (ClampMin = "0"))
+	int32 CellsX = 0;
 
-	// Footprint size in cells along the room's Y axis.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement", meta = (ClampMin = "1"))
-	int32 CellsY = 1;
+	// The mesh's own size in cells along its Y axis, before RotationYaw. 0 = from the mesh bounds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement", meta = (ClampMin = "0"))
+	int32 CellsY = 0;
 
-	// Turns the mesh around the footprint centre (use 0 / 90 / 180 / 270). CellsX / CellsY stay the
-	// footprint in the room, so a 2x4 mesh turned 90 degrees is entered as CellsX 4, CellsY 2.
+	// 0 / 90 / 180 / 270. At 90 / 270 the footprint is CellsY x CellsX. The rotated mesh is placed so
+	// its bounds start at the origin cell's corner.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement")
 	float RotationYaw = 0.f;
 };

@@ -282,9 +282,9 @@ struct FForcedPlacement
 
     FIntPoint CellPosition;   // footprint origin cell (lowest X,Y), same as the Visualizer coordinate labels
     UStaticMesh* Mesh;
-    int32 CellsX = 1;         // footprint in the room, after rotation
-    int32 CellsY = 1;
-    float RotationYaw = 0.f;  // turns the mesh about the footprint centre (0/90/180/270)
+    int32 CellsX = 0;         // mesh's own size in cells (like FloorData), 0 = from bounds (rounded up)
+    int32 CellsY = 0;
+    float RotationYaw = 0.f;  // 0/90/180/270; 90/270 swap the footprint; rotated bounds' low corner aligned to the origin cell
 };
 ```
 Lists: `URoomData::ForcedPlacements` (every room using the asset) and `FRoomPlacement::ForcedPlacements`

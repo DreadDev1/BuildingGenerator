@@ -595,6 +595,29 @@ void AMasterRoom::GatherForcedPlacements(TArray<const FForcedPlacement*>& Out) c
 	}
 }
 
+bool AMasterRoom::GetForcedFloorPlacement(const FForcedPlacement& FP, int32& OutCellsX, int32& OutCellsY, FTransform& OutXform) const
+{
+	if (!IsValid(FP.Mesh)) return false;
+	constexpr float CellSize = 100.f;
+
+	// Footprint: the mesh's own size in cells (entered, or from its bounds), swapped at 90 / 270.
+	const FBox MB = FP.Mesh->GetBoundingBox();
+	const int32 AutoX = FMath::Max(1, FMath::CeilToInt((MB.Max.X - MB.Min.X) / CellSize - 0.01f));
+	const int32 AutoY = FMath::Max(1, FMath::CeilToInt((MB.Max.Y - MB.Min.Y) / CellSize - 0.01f));
+	OutCellsX = FP.CellsX > 0 ? FP.CellsX : AutoX;
+	OutCellsY = FP.CellsY > 0 ? FP.CellsY : AutoY;
+	const float YawMod = FMath::Fmod(FMath::Abs(FP.RotationYaw), 180.f);
+	if (FMath::Abs(YawMod - 90.f) < 1.f) Swap(OutCellsX, OutCellsY);
+
+	// Rotate, then move the rotated bounds' low corner onto the origin cell's corner. Full-cell meshes
+	// end up centred on their footprint as before; half-cell meshes sit flush to the origin cell.
+	const FRotator Rot(0.f, FP.RotationYaw, 0.f);
+	const FBox RB = MB.TransformBy(FTransform(Rot));
+	const FVector Loc(FP.CellPosition.X * CellSize - RB.Min.X, FP.CellPosition.Y * CellSize - RB.Min.Y, 0.f);
+	OutXform = FTransform(Rot, Loc);
+	return true;
+}
+
 void AMasterRoom::PlaceForcedFloorMeshes(TArray<bool>& Claimed)
 {
 	TArray<const FForcedPlacement*> List;
@@ -604,11 +627,11 @@ void AMasterRoom::PlaceForcedFloorMeshes(TArray<bool>& Claimed)
 	for (int32 i = 0; i < List.Num(); ++i)
 	{
 		const FForcedPlacement& FP = *List[i];
-		const int32 CX = FMath::Max(1, FP.CellsX);
-		const int32 CY = FMath::Max(1, FP.CellsY);
 		const FIntPoint C = FP.CellPosition;
+		int32 CX = 1, CY = 1;
+		FTransform Xform;
 
-		if (!IsValid(FP.Mesh))
+		if (!GetForcedFloorPlacement(FP, CX, CY, Xform))
 		{
 			DevLog->LogImportant(FString::Printf(TEXT("ForcedPlacement %d at (%d,%d): no mesh set — skipped"), i, C.X, C.Y), EBGLogCategory::Mesh);
 			continue;
@@ -621,7 +644,7 @@ void AMasterRoom::PlaceForcedFloorMeshes(TArray<bool>& Claimed)
 			continue;
 		}
 
-		GetOrCreateFloorISMC(FP.Mesh)->AddInstance(MakeCellTransform(C.X, C.Y, CX, CY, FP.RotationYaw));
+		GetOrCreateFloorISMC(FP.Mesh)->AddInstance(Xform);
 		ClaimCells(C.X, C.Y, CX, CY, Claimed);
 		++Placed;
 	}
@@ -1284,9 +1307,12 @@ void AMasterRoom::BuildCustomCells(TArray<FIntPoint>& OutCells) const
 	// Every cell of each footprint, so the whole forced area shows yellow.
 	for (const FForcedPlacement* FP : List)
 	{
-		for (int32 DY = 0; DY < FMath::Max(1, FP->CellsY); ++DY)
+		int32 CX = 1, CY = 1;
+		FTransform Unused;
+		if (!GetForcedFloorPlacement(*FP, CX, CY, Unused)) continue;
+		for (int32 DY = 0; DY < CY; ++DY)
 		{
-			for (int32 DX = 0; DX < FMath::Max(1, FP->CellsX); ++DX)
+			for (int32 DX = 0; DX < CX; ++DX)
 			{
 				const FIntPoint C(FP->CellPosition.X + DX, FP->CellPosition.Y + DY);
 				if (C.X >= 0 && C.Y >= 0 && C.X < RoomGridSize.X && C.Y < RoomGridSize.Y) OutCells.AddUnique(C);
