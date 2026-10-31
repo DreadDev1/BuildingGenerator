@@ -174,7 +174,8 @@ void AFloorManager::PreviewLayout()
 		const UDoorData* DD = IsValid(Door.DoorDataOverride)
 			? Door.DoorDataOverride.Get()
 			: (IsValid(P.RoomDataAsset) && IsValid(P.RoomDataAsset->DoorData) ? P.RoomDataAsset->DoorData.Get() : nullptr);
-		return (IsValid(DD) && DD->DoorWidth == EDoorWidth::FourCell) ? 4 : 2;
+		if (!IsValid(DD)) return 2;
+		return DD->DoorWidth == EDoorWidth::FourCell ? 4 : (DD->DoorWidth == EDoorWidth::ThreeCell ? 3 : 2);
 	};
 
 	auto FindAdjacentIndex = [&](const FFootprint& F, ERoomFace Face) -> int32

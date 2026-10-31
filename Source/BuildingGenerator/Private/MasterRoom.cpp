@@ -605,7 +605,12 @@ static void FaceToCell(ERoomFace Face, int32 FacePos, int32 GridW, int32 GridH, 
 static int32 GetDoorWidthCells(const UDoorData* DoorData)
 {
 	if (!IsValid(DoorData)) return 2;
-	return (DoorData->DoorWidth == EDoorWidth::FourCell) ? 4 : 2;
+	switch (DoorData->DoorWidth)
+	{
+	case EDoorWidth::FourCell:  return 4;
+	case EDoorWidth::ThreeCell: return 3;
+	default:                    return 2;
+	}
 }
 
 // A module needs a BaseMesh, plus a TopMesh unless it is a single-piece (bUseBaseMeshOnly) module.

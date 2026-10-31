@@ -14,14 +14,16 @@ enum class EDoorInteraction : uint8
 	RequiresInput	UMETA(DisplayName = "Requires Input")
 };
 
-// Width of the door opening in cells. TwoCell = 200cm, FourCell = 400cm.
+// Width of the door opening in cells. TwoCell = 200cm, ThreeCell = 300cm, FourCell = 400cm.
 // CellOffset in FDoorPlacement marks the first cell of the span.
 // ColumnMesh is placed at CellOffset-1 and CellOffset+Width (the flanking cells).
 UENUM(BlueprintType)
 enum class EDoorWidth : uint8
 {
 	TwoCell  UMETA(DisplayName = "Two Cell (200cm)"),
-	FourCell UMETA(DisplayName = "Four Cell (400cm)")
+	FourCell UMETA(DisplayName = "Four Cell (400cm)"),
+	// Appended last so existing assets keep their stored values.
+	ThreeCell UMETA(DisplayName = "Three Cell (300cm)")
 };
 
 UCLASS(BlueprintType)

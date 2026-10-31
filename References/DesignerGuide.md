@@ -801,6 +801,9 @@ all floor grid previews in one step. The DataAsset is not modified — press
   stacked at `TopMeshZ` (0 = top of the door mesh), uses the door's width and `DoorPlacementOffset`,
   and has its own `TopMeshAdjust` (rotate / flip / scale) like a wall-module slot. Example: Pack B uses
   `Panel_1x1x4m_C` with Roll 180 and Scale Y 0.5 (a 4W top trim squeezed to the 2W door).
+- **DoorWidth** is Two Cell (200 cm), Three Cell (300 cm) or Four Cell (400 cm). Example: Pack E uses
+  Three Cell with `Wall_Door_3x3m_SM` as DoorMesh, `Door_3x3m_Base_SM` as FrameMesh and
+  `Wall_C_1x4m_SM` as TopMesh with Roll 180 and Scale Y 0.75 (the 4W top trim fitted to 3W).
 ### Door Notes — Floor in the doorway (DoorBaseMesh / bFillFloorUnderDoor)
 
 Doors sit in the wall ring, and the room's floor fill never covers wall-ring cells. When a door is

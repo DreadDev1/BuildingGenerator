@@ -189,7 +189,7 @@ circular dependency.
 | DoorBaseRotation | FRotator | applied around DoorBaseMesh's pivot before placement |
 | bFillFloorUnderDoor | bool | used when DoorBaseMesh is empty: fill the door cells with FloorData 1xN tiles (weighted; Uniform mode uses the room's uniform entry if it fits) |
 | ColumnMesh | UStaticMesh* | placed at CellOffset-1 and CellOffset+Width (flanking cells) when bUseColumns=true. Null + bUseColumns=true = flanking cells reserved but left empty |
-| DoorWidth | EDoorWidth | TwoCell (200cm) or FourCell (400cm). Controls door span and column positions |
+| DoorWidth | EDoorWidth | TwoCell (200cm), ThreeCell (300cm) or FourCell (400cm). Controls door span and column positions |
 | bUseColumns | bool | Default false. When false, flanking cells are not reserved and receive normal wall modules from WallData. When true, flanking cells are reserved for ColumnMesh (cell left empty if ColumnMesh is null) |
 | DoorPlacementOffset | FVector | wall-forward space (X=into-room, Y=along-face, Z=up). Corrects for door mesh depth ≠ wall face. Same convention as FWallModule::PlacementOffset |
 | ColumnPlacementOffset | FVector | same convention, applied to ColumnMesh only. Set independently from DoorPlacementOffset |
@@ -569,7 +569,7 @@ if (Target.bBuildEditor)
   **MOOT: Data asset classes were created from scratch in Step 1.** No legacy assets to
   reconcile.
 
-- **Door width encoding**: Width lives on UDoorData (EDoorWidth enum, TwoCell/FourCell),
+- **Door width encoding**: Width lives on UDoorData (EDoorWidth enum, TwoCell/ThreeCell/FourCell),
   not on FDoorPlacement. FDoorPlacement.CellOffset is the start of the span.
   Multiple doors on one room are handled entirely by the FDoorPlacement array — no
   separate bMultipleDoors flag is needed. **DECIDED during door implementation.**
