@@ -46,6 +46,74 @@ AMasterRoom* ABuildingManager::RequestRoomSpawn(
 }
 
 // ============================================================
+// Floor Manager Spawning
+// ============================================================
+
+bool ABuildingManager::SpawnFloorManagersFromAsset()
+{
+	if (!IsValid(BuildingDataAsset))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ABuildingManager::SpawnFloorManagersFromAsset — BuildingDataAsset is not set"));
+		return false;
+	}
+
+	if (BuildingDataAsset->Floors.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ABuildingManager::SpawnFloorManagersFromAsset — BuildingDataAsset has no floors defined"));
+		return false;
+	}
+
+	// Destroy any previously spawned floor managers and their rooms
+	for (TObjectPtr<AFloorManager>& Floor : SpawnedFloorManagers)
+	{
+		if (IsValid(Floor))
+		{
+			Floor->ClearLayout();
+			Floor->Destroy();
+		}
+	}
+	SpawnedFloorManagers.Empty();
+
+	UWorld* World = GetWorld();
+	if (!World) return false;
+
+	const FVector BuildingOrigin   = GetActorLocation();
+	float         CumulativeHeight = 0.f;
+
+	for (int32 i = 0; i < BuildingDataAsset->Floors.Num(); i++)
+	{
+		const FFloorDefinition& Def = BuildingDataAsset->Floors[i];
+
+		// Fall back to base AFloorManager if no subclass is specified
+		TSubclassOf<AFloorManager> FloorClass = Def.FloorClass
+			? Def.FloorClass
+			: TSubclassOf<AFloorManager>(AFloorManager::StaticClass());
+
+		const FTransform FloorTransform(
+			FRotator::ZeroRotator,
+			BuildingOrigin + FVector(0.f, 0.f, CumulativeHeight));
+
+		FActorSpawnParameters Params;
+		Params.Owner = this;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		AFloorManager* Floor = World->SpawnActor<AFloorManager>(FloorClass, FloorTransform, Params);
+		if (IsValid(Floor))
+		{
+			Floor->FloorIndex     = i;
+			Floor->RoomHeightCm   = Def.RoomHeightCm;
+			Floor->FloorGridSize  = Def.FloorGridSize;
+			Floor->RoomPlacements = Def.RoomPlacements;
+			SpawnedFloorManagers.Add(Floor);
+		}
+
+		CumulativeHeight += static_cast<float>(Def.RoomHeightCm);
+	}
+
+	return SpawnedFloorManagers.Num() > 0;
+}
+
+// ============================================================
 // Editor
 // ============================================================
 
@@ -53,24 +121,42 @@ AMasterRoom* ABuildingManager::RequestRoomSpawn(
 
 void ABuildingManager::GenerateBuilding()
 {
-	for (TObjectPtr<AFloorManager>& Floor : FloorManagers)
+	if (!SpawnFloorManagersFromAsset()) return;
+
+	for (TObjectPtr<AFloorManager>& Floor : SpawnedFloorManagers)
 	{
 		if (IsValid(Floor))
 		{
-			Floor->GenerateLayout();
+			Floor->PreviewLayout();
+		}
+	}
+}
+
+void ABuildingManager::SpawnBuilding()
+{
+	if (!SpawnFloorManagersFromAsset()) return;
+
+	for (TObjectPtr<AFloorManager>& Floor : SpawnedFloorManagers)
+	{
+		if (IsValid(Floor))
+		{
+			Floor->GenerateLayoutWith(this);
 		}
 	}
 }
 
 void ABuildingManager::ClearBuilding()
 {
-	for (TObjectPtr<AFloorManager>& Floor : FloorManagers)
+	for (TObjectPtr<AFloorManager>& Floor : SpawnedFloorManagers)
 	{
 		if (IsValid(Floor))
 		{
 			Floor->ClearLayout();
+			Floor->ClearPreview();
+			Floor->Destroy();
 		}
 	}
+	SpawnedFloorManagers.Empty();
 }
 
 #endif // WITH_EDITOR

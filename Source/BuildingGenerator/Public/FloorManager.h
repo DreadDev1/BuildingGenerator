@@ -43,19 +43,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FloorManager|Layout", meta = (ClampMin = "0"))
 	int32 FloorIndex = 0;
 
-	// The BuildingManager that owns this floor. Must be set before calling GenerateLayout.
-	// ABuildingManager assigns this when it spawns FloorManagers at runtime;
-	// set it manually in the Details panel when testing a standalone FloorManager.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FloorManager|Layout")
-	TObjectPtr<ABuildingManager> OwningBuildingManager;
-
 	// ----------------------------------------------------------------
 	// Runtime state
 	// ----------------------------------------------------------------
 
-	// Rooms spawned by GenerateLayout. Cleared by ClearLayout.
+	// Rooms spawned by GenerateLayout / GenerateLayoutWith. Cleared by ClearLayout.
 	UPROPERTY(BlueprintReadOnly, Category = "FloorManager|Runtime")
 	TArray<TObjectPtr<AMasterRoom>> SpawnedRooms;
+
+	// Spawns rooms through ABuildingManager::RequestRoomSpawn (authority-gated).
+	// Called by ABuildingManager::SpawnBuilding. Also the runtime entry point for
+	// Step 8+ server-side generation — not editor-only.
+	void GenerateLayoutWith(ABuildingManager* BuildingManager);
+
+	// Destroys all AMasterRoom actors in SpawnedRooms. Not editor-only — used
+	// by GenerateLayoutWith and by ABuildingManager::ClearBuilding at runtime.
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "FloorManager|Generation")
+	void ClearLayout();
 
 	// ----------------------------------------------------------------
 	// Debug components
@@ -87,10 +91,6 @@ public:
 	// Implemented in Step 7.
 	UFUNCTION(CallInEditor, Category = "Debug|Actions")
 	void GenerateLayout();
-
-	// Destroys all AMasterRoom actors spawned by the last GenerateLayout call.
-	UFUNCTION(CallInEditor, Category = "Debug|Actions")
-	void ClearLayout();
 
 	// Flushes all persistent debug lines and strings drawn by PreviewLayout.
 	UFUNCTION(CallInEditor, Category = "Debug|Actions")
