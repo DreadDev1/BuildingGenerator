@@ -152,12 +152,14 @@ circular dependency.
 | CellsY | int32 | |
 | AllowRotation | bool | non-square: both orientations always tried; flag only randomizes the starting orientation. Square: permits 0°/90°/180°/270° aesthetic rotation |
 | Weight | float | weighted probability. In Uniform mode, weight controls how likely this entry is to be the one mesh chosen for the whole room |
+| MeshRotation | FRotator | rotation around the mesh pivot before placement (applied as FTransform(MeshRotation) * cell transform). Roll 180 flips a floor panel so it can be used as a ceiling panel; footprint unchanged. Zero = old behaviour |
 
 ### UWallData fields
 | Field | Type | Notes |
 |---|---|---|
 | WallModules | TArray\<FWallModule\> | module pool — bin-packed along each wall face |
-| CornerMesh | UStaticMesh* | single mesh for all four room corners. Pivot: BottomCenter 100×100cm. Rotated 0°/90°/180°/270° per corner. Null = no corner geometry |
+| CornerMesh | UStaticMesh* | legacy single-mesh corner, used only when CornerModule.BaseMesh is empty. Pivot: BottomCenter 100×100cm. Rotated 0°/90°/180°/270° per corner. Null = no corner geometry |
+| CornerModule | FWallModule | stacked corner (Base/Middle1/Middle2/Top, per-slot adjust, stack heights). Wins over CornerMesh when BaseMesh is set. Single-piece corner = BaseMesh + bUseBaseMeshOnly. Placed at the corner-cell centre with the corner yaw; PlacementOffset is in corner space (SW corner: interior toward +X/+Y). CellsWide/Weight ignored |
 | bIsExteriorCapable | bool | signals BuildingManager |
 
 ### FWallModule fields (element of UWallData::WallModules)
@@ -173,6 +175,7 @@ circular dependency.
 | MiddleMesh1StackHeight | float | same, for MiddleMesh1 |
 | MiddleMesh2StackHeight | float | same, for MiddleMesh2 |
 | Weight | float | weighted random probability |
+| BaseMeshAdjust / MiddleMesh1Adjust / MiddleMesh2Adjust / TopMeshAdjust | FWallMeshAdjust | per-slot Rotation, Scale (negative = mirror), bAutoAlign, Offset. With Rotation/Scale set and bAutoAlign on, the adjusted bounds are re-seated: wall slots back face X=0, centred Y, bottom Z=0; corner slots centred XY, bottom Z=0. Offset is added last. Stack height uses the adjusted bounds unless a StackHeight override is set. Defaults = mesh placed exactly as authored |
 
 ### UDoorData fields
 | Field | Type | Notes |
@@ -294,7 +297,7 @@ AHallwayRoom skips step 7 (flavor). AStaircaseRoom adds stair mesh in step 6.
 2. **ClassifyCells()** — edges → WallCell, corners → CornerCell, interior → FloorCell
 3. **PlaceFloorMeshes()** — fill FloorCells using URoomData::FloorData weighted random (FRandomStream seeded from GenerationSeed)
 4. **PlaceCeilingMeshes()** — mirror floor pass at RoomHeight Z offset
-5. **PlaceWallMeshStacks()** — per face, per position: column cell (CellOffset±Width) → place ColumnMesh or leave empty (always suppresses wall module); door start → place DoorMesh spanning DoorWidth cells; else → bin-pack UWallData modules (available run stops at column and door span positions); then place CornerMesh at all four corners
+5. **PlaceWallMeshStacks()** — per face, per position: column cell (CellOffset±Width) → place ColumnMesh or leave empty (always suppresses wall module); door start → place DoorMesh spanning DoorWidth cells; else → bin-pack UWallData modules (available run stops at column and door span positions); then place CornerModule (or the legacy CornerMesh) at all four corners
 6. **ApplyForcedPlacements()** — override cells from URoomData::ForcedPlacements
 7. **PlaceFlavorMeshes()** — fill remaining interior cells from FlavorMeshes pool at FlavorDensity
 8. **SpawnDoorTriggers()** — for each door in ActivePlacement.Doors, create replicated UBoxComponent trigger

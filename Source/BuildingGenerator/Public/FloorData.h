@@ -35,6 +35,12 @@ struct BUILDINGGENERATOR_API FFloorMeshEntry
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FloorData|Mesh")
 	float Weight = 1.f;
+
+	// Rotation applied in the mesh's own space, around its pivot, before placement.
+	// Roll 180 flips a floor panel so it can be used as a ceiling panel (or the reverse); the panel
+	// keeps its footprint, so CellsX / CellsY stay the same.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FloorData|Mesh")
+	FRotator MeshRotation = FRotator::ZeroRotator;
 };
 
 UCLASS(BlueprintType)

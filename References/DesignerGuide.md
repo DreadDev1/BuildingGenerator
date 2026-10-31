@@ -319,6 +319,10 @@ height — which is the visible underside of the ceiling as seen from the room.
 | `AllowRotation` | checked | Randomizes which orientation is tried first; both are always attempted |
 | `Weight` | `2.0` | |
 
+> **Using floor panels as ceiling panels:** every mesh entry (FloorData and CeilingData) has a
+> `MeshRotation`. Set Roll = 180 to flip a floor panel upside down for a ceiling; it keeps its
+> footprint, so CellsX / CellsY stay the same. A flipped panel's underside sits at the ceiling height.
+
 > **Why the 1×1 entry is recommended:** Same guidance as FloorData — the exhaustive pool
 > algorithm tries all candidates in all orientations before giving up, so a room filled with
 > only 1×2 ceiling tiles will typically cover fully. Add a 1×1 entry to guarantee coverage
@@ -434,12 +438,14 @@ use a thin box mesh (e.g. 100 × 10 × 100 cm).
 | `MiddleMesh1StackHeight` | `0` | Same — only set if Middle1 shows a gap above it |
 | `MiddleMesh2StackHeight` | `0` | Same — only set if Middle2 shows a gap above it |
 | `Weight` | `1.0` | Weighted random selection — irrelevant with only one module |
+| `BaseMeshAdjust` … `TopMeshAdjust` | defaults | Optional per-slot Rotation / Scale / Offset. See **Reusing a mesh in another orientation** below |
 
 **Asset-level fields (on the UWallData asset itself, not per module):**
 
 | Field | Value | Notes |
 |---|---|---|
-| `CornerMesh` | Your corner mesh (optional) | Placed at all four room corners. See pivot note below. Leave empty for no corner geometry. |
+| `CornerMesh` | Your corner mesh (optional) | Placed at all four room corners. See pivot note below. Leave empty for no corner geometry. Ignored when `CornerModule` has a BaseMesh. |
+| `CornerModule` | empty (optional) | A corner built like a wall module (Base / Middle / Top). Use it for corners made of several pieces, e.g. a trim + panel + trim column. For a one-piece corner set BaseMesh and tick `bUseBaseMeshOnly`. `PlacementOffset` moves the corner within its cell (at the SW corner +X/+Y is toward the room). |
 | `bIsExteriorCapable` | unchecked | Not needed until Step 11 |
 
 > **Corner mesh pivot:** The corner mesh must have a **BottomCenter** pivot — the same as
@@ -457,6 +463,23 @@ use a thin box mesh (e.g. 100 × 10 × 100 cm).
 > room center (NE direction). The other three corners are automatic rotations of this.
 > A symmetric corner piece (e.g. a column or a quarter-circle) looks identical at all
 > four rotations.
+
+> **Reusing a mesh in another orientation (per-slot Adjust):**
+> Every slot (Base, Middle1, Middle2, Top) on a wall module or the CornerModule has an Adjust
+> section, so one mesh can play several roles without duplicating the asset:
+>
+> | Want | Set on the slot's Adjust |
+> |---|---|
+> | Stand a floor panel up as a wall panel | `Rotation` Pitch 90 |
+> | Use a base trim as the top trim (upside down) | `Scale` Z = -1 (mirror) or `Rotation` Roll 180 |
+> | Make a small piece bigger / smaller | `Scale` |
+> | Nudge one slot only | `Offset` (X = into the room, Y = along the face, Z = up) |
+>
+> With `bAutoAlign` on (default), a rotated or scaled mesh is re-seated automatically: wall
+> slots get their back face on the room's outer edge, centred along the module, bottom on the
+> layer height; corner slots are centred on the corner cell. Stack heights use the rotated
+> size (a 25 cm floor tile stood upright stacks as 100 or 200 cm). The `StackHeight` overrides
+> still win. Slots left at their defaults are placed exactly as authored.
 
 4. Save the asset.
 

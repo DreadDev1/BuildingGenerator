@@ -257,7 +257,7 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 
 					if (CanPlaceMesh(X, Y, ACX, ACY, Claimed))
 					{
-						GetOrCreateFloorISMC(Entry->Mesh)->AddInstance(MakeCellTransform(X, Y, ACX, ACY, AYaw));
+						GetOrCreateFloorISMC(Entry->Mesh)->AddInstance(FTransform(Entry->MeshRotation) * MakeCellTransform(X, Y, ACX, ACY, AYaw));
 						ClaimCells(X, Y, ACX, ACY, Claimed);
 						++PlacedCount;
 						bPlaced = true;
@@ -268,7 +268,7 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 						AYaw = (AYaw == 0.f) ? 90.f : 0.f;
 						if (CanPlaceMesh(X, Y, ACX, ACY, Claimed))
 						{
-							GetOrCreateFloorISMC(Entry->Mesh)->AddInstance(MakeCellTransform(X, Y, ACX, ACY, AYaw));
+							GetOrCreateFloorISMC(Entry->Mesh)->AddInstance(FTransform(Entry->MeshRotation) * MakeCellTransform(X, Y, ACX, ACY, AYaw));
 							ClaimCells(X, Y, ACX, ACY, Claimed);
 							++PlacedCount;
 							bPlaced = true;
@@ -283,7 +283,7 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 
 					if (CanPlaceMesh(X, Y, Entry->CellsX, Entry->CellsY, Claimed))
 					{
-						GetOrCreateFloorISMC(Entry->Mesh)->AddInstance(MakeCellTransform(X, Y, Entry->CellsX, Entry->CellsY, Yaw));
+						GetOrCreateFloorISMC(Entry->Mesh)->AddInstance(FTransform(Entry->MeshRotation) * MakeCellTransform(X, Y, Entry->CellsX, Entry->CellsY, Yaw));
 						ClaimCells(X, Y, Entry->CellsX, Entry->CellsY, Claimed);
 						++PlacedCount;
 						bPlaced = true;
@@ -295,7 +295,7 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 			{
 				if (FallbackEntry)
 				{
-					GetOrCreateFloorISMC(FallbackEntry->Mesh)->AddInstance(MakeCellTransform(X, Y, 1, 1, 0.f));
+					GetOrCreateFloorISMC(FallbackEntry->Mesh)->AddInstance(FTransform(FallbackEntry->MeshRotation) * MakeCellTransform(X, Y, 1, 1, 0.f));
 					Claimed[CellIndex(X, Y)] = true;
 					++FallbackCount;
 				}
@@ -451,7 +451,7 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 
 					if (CanPlaceMesh(X, Y, ACX, ACY, Claimed))
 					{
-						GetOrCreateCeilingISMC(Entry->Mesh)->AddInstance(MakeCellTransform(X, Y, ACX, ACY, AYaw, CeilingZ));
+						GetOrCreateCeilingISMC(Entry->Mesh)->AddInstance(FTransform(Entry->MeshRotation) * MakeCellTransform(X, Y, ACX, ACY, AYaw, CeilingZ));
 						ClaimCells(X, Y, ACX, ACY, Claimed);
 						++PlacedCount;
 						bPlaced = true;
@@ -462,7 +462,7 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 						AYaw = (AYaw == 0.f) ? 90.f : 0.f;
 						if (CanPlaceMesh(X, Y, ACX, ACY, Claimed))
 						{
-							GetOrCreateCeilingISMC(Entry->Mesh)->AddInstance(MakeCellTransform(X, Y, ACX, ACY, AYaw, CeilingZ));
+							GetOrCreateCeilingISMC(Entry->Mesh)->AddInstance(FTransform(Entry->MeshRotation) * MakeCellTransform(X, Y, ACX, ACY, AYaw, CeilingZ));
 							ClaimCells(X, Y, ACX, ACY, Claimed);
 							++PlacedCount;
 							bPlaced = true;
@@ -477,7 +477,7 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 
 					if (CanPlaceMesh(X, Y, Entry->CellsX, Entry->CellsY, Claimed))
 					{
-						GetOrCreateCeilingISMC(Entry->Mesh)->AddInstance(MakeCellTransform(X, Y, Entry->CellsX, Entry->CellsY, Yaw, CeilingZ));
+						GetOrCreateCeilingISMC(Entry->Mesh)->AddInstance(FTransform(Entry->MeshRotation) * MakeCellTransform(X, Y, Entry->CellsX, Entry->CellsY, Yaw, CeilingZ));
 						ClaimCells(X, Y, Entry->CellsX, Entry->CellsY, Claimed);
 						++PlacedCount;
 						bPlaced = true;
@@ -489,7 +489,7 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 			{
 				if (FallbackEntry)
 				{
-					GetOrCreateCeilingISMC(FallbackEntry->Mesh)->AddInstance(MakeCellTransform(X, Y, 1, 1, 0.f, CeilingZ));
+					GetOrCreateCeilingISMC(FallbackEntry->Mesh)->AddInstance(FTransform(FallbackEntry->MeshRotation) * MakeCellTransform(X, Y, 1, 1, 0.f, CeilingZ));
 					Claimed[CellIndex(X, Y)] = true;
 					++FallbackCount;
 				}
@@ -571,6 +571,33 @@ static const FWallModule* PickWallModule(const UWallData* WallData, int32 Availa
 	return Fallback;
 }
 
+// How an adjusted slot is re-seated (see FWallMeshAdjust::bAutoAlign).
+enum class EModuleAlign : uint8 { Wall, Corner };
+
+// Mesh-local transform for one slot of a wall / corner module, plus the slot's bounds after it.
+// A slot without rotation or scale only gets its Offset, so meshes are placed exactly as authored.
+static FTransform MakeSlotTransform(const UStaticMesh* Mesh, const FWallMeshAdjust& Adjust, EModuleAlign Align, FBox& OutBounds)
+{
+	const FBox MeshBox = Mesh->GetBoundingBox();
+	if (!Adjust.HasRotationOrScale())
+	{
+		OutBounds = MeshBox.ShiftBy(Adjust.Offset);
+		return FTransform(Adjust.Offset);
+	}
+
+	const FBox Adjusted = MeshBox.TransformBy(FTransform(Adjust.Rotation, FVector::ZeroVector, Adjust.Scale));
+	FVector Shift = Adjust.Offset;
+	if (Adjust.bAutoAlign)
+	{
+		const FVector Center = Adjusted.GetCenter();
+		Shift += (Align == EModuleAlign::Wall)
+			? FVector(-Adjusted.Min.X, -Center.Y, -Adjusted.Min.Z)   // back face on X=0, centred along the face
+			: FVector(-Center.X,       -Center.Y, -Adjusted.Min.Z);  // centred on the corner cell
+	}
+	OutBounds = Adjusted.ShiftBy(Shift);
+	return FTransform(Adjust.Rotation, Shift, Adjust.Scale);
+}
+
 void AMasterRoom::PlaceWallMeshStacks_Implementation()
 {
 	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
@@ -636,6 +663,32 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 		return false;
 	};
 
+	// Places one module's layers (Base, Middle1, Middle2, Top) on top of each other.
+	// MakeBase(Z) returns the module's placement transform for a layer starting at height Z.
+	// Layer heights come from the StackHeight overrides, else from each slot's (adjusted) bounds.
+	auto PlaceModuleStack = [&](const FWallModule& Mod, EModuleAlign Align, TFunctionRef<FTransform(float)> MakeBase)
+	{
+		struct FSlot { UStaticMesh* Mesh; const FWallMeshAdjust* Adjust; float Override; };
+		const FSlot Slots[] = {
+			{ Mod.BaseMesh,    &Mod.BaseMeshAdjust,    Mod.BaseMeshStackHeight    },
+			{ Mod.MiddleMesh1, &Mod.MiddleMesh1Adjust, Mod.MiddleMesh1StackHeight },
+			{ Mod.MiddleMesh2, &Mod.MiddleMesh2Adjust, Mod.MiddleMesh2StackHeight },
+			{ Mod.TopMesh,     &Mod.TopMeshAdjust,     0.f                        },
+		};
+		const int32 NumSlots = Mod.bUseBaseMeshOnly ? 1 : UE_ARRAY_COUNT(Slots);
+
+		float Z = 0.f;
+		for (int32 i = 0; i < NumSlots; ++i)
+		{
+			const FSlot& S = Slots[i];
+			if (!IsValid(S.Mesh)) continue;
+
+			FBox Bounds;
+			const FTransform Local = MakeSlotTransform(S.Mesh, *S.Adjust, Align, Bounds);
+			GetOrCreateWallISMC(S.Mesh)->AddInstance(Local * MakeBase(Z));
+			Z += (S.Override > 0.f) ? S.Override : Bounds.GetSize().Z;
+		}
+	};
 	int32 StacksPlaced     = 0;
 	int32 DoorsPlaced      = 0;
 	int32 ColumnsPlaced    = 0;
@@ -722,30 +775,10 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 				break;
 			}
 
-			auto StackH = [](UStaticMesh* Mesh, float Override) -> float
+			PlaceModuleStack(*Mod, EModuleAlign::Wall, [&](float Z)
 			{
-				if (Override > 0.f) return Override;
-				return IsValid(Mesh) ? Mesh->GetBoundingBox().GetSize().Z : 0.f;
-			};
-
-			const float BaseH = StackH(Mod->BaseMesh,    Mod->BaseMeshStackHeight);
-			const float M1H   = Mod->bUseBaseMeshOnly ? 0.f : StackH(Mod->MiddleMesh1, Mod->MiddleMesh1StackHeight);
-			const float M2H   = Mod->bUseBaseMeshOnly ? 0.f : StackH(Mod->MiddleMesh2, Mod->MiddleMesh2StackHeight);
-
-			auto PlaceLayer = [&](UStaticMesh* Mesh, float Z)
-			{
-				if (!IsValid(Mesh)) return;
-				GetOrCreateWallISMC(Mesh)->AddInstance(
-					MakeWallTransform(Pos, Face, Mod->CellsWide, Z, Mod->PlacementOffset));
-			};
-
-			PlaceLayer(Mod->BaseMesh,    0.f);
-			if (!Mod->bUseBaseMeshOnly)
-			{
-				PlaceLayer(Mod->MiddleMesh1, BaseH);
-				PlaceLayer(Mod->MiddleMesh2, BaseH + M1H);
-				PlaceLayer(Mod->TopMesh,     BaseH + M1H + M2H);
-			}
+				return MakeWallTransform(Pos, Face, Mod->CellsWide, Z, Mod->PlacementOffset);
+			});
 
 			Pos += Mod->CellsWide;
 			++StacksPlaced;
@@ -753,9 +786,12 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 	}
 
 	// Place corner pieces at all four ECellType::Corner cells.
-	// CornerMesh is optional — null means this wall style has no corner geometry.
+	// CornerModule (a stacked corner) wins when its BaseMesh is set; otherwise the legacy CornerMesh
+	// is used. Both are optional — neither set means this wall style has no corner geometry.
 	int32 CornersPlaced = 0;
-	if (IsValid(WallData->CornerMesh))
+	const FWallModule& CornerModule = WallData->CornerModule;
+	const bool bUseCornerModule = IsValid(CornerModule.BaseMesh);
+	if (bUseCornerModule || IsValid(WallData->CornerMesh))
 	{
 		const int32 MaxX = RoomGridSize.X - 1;
 		const int32 MaxY = RoomGridSize.Y - 1;
@@ -771,10 +807,20 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 			{ 0,    MaxY, 270.f },   // SE — interior corner faces NW
 		};
 
-		UInstancedStaticMeshComponent* CornerISMC = GetOrCreateWallISMC(WallData->CornerMesh);
 		for (const FCornerDef& C : Corners)
 		{
-			CornerISMC->AddInstance(MakeCellTransform(C.X, C.Y, 1, 1, C.Yaw));
+			if (bUseCornerModule)
+			{
+				PlaceModuleStack(CornerModule, EModuleAlign::Corner, [&](float Z)
+				{
+					// PlacementOffset is in corner space, so it turns with the corner.
+					return FTransform(CornerModule.PlacementOffset) * MakeCellTransform(C.X, C.Y, 1, 1, C.Yaw, Z);
+				});
+			}
+			else
+			{
+				GetOrCreateWallISMC(WallData->CornerMesh)->AddInstance(MakeCellTransform(C.X, C.Y, 1, 1, C.Yaw));
+			}
 			++CornersPlaced;
 		}
 	}
