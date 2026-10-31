@@ -185,6 +185,9 @@ circular dependency.
 | TopMesh | UStaticMesh* | optional — stacked above DoorMesh at TopMeshZ (0 = top of DoorMesh bounds), same width and DoorPlacementOffset; e.g. the wall's top trim |
 | TopMeshAdjust | FWallMeshAdjust | rotation / scale / offset for TopMesh, wall auto-align (back face X=0, centred Y, bottom Z=0) |
 | TopMeshZ | float | start height of TopMesh; 0 = DoorMesh bounds Max.Z |
+| DoorBaseMesh | UStaticMesh* | optional floor piece for the door's own wall-ring cells (the floor fill skips them). Placed in PlaceFloorMeshes like a floor tile: MakeCellTransform over the door cells (DoorWidth x 1) with the face yaw, so it is authored in door space (X = into room, Y = along wall) |
+| DoorBaseRotation | FRotator | applied around DoorBaseMesh's pivot before placement |
+| bFillFloorUnderDoor | bool | used when DoorBaseMesh is empty: fill the door cells with FloorData 1xN tiles (weighted; Uniform mode uses the room's uniform entry if it fits) |
 | ColumnMesh | UStaticMesh* | placed at CellOffset-1 and CellOffset+Width (flanking cells) when bUseColumns=true. Null + bUseColumns=true = flanking cells reserved but left empty |
 | DoorWidth | EDoorWidth | TwoCell (200cm) or FourCell (400cm). Controls door span and column positions |
 | bUseColumns | bool | Default false. When false, flanking cells are not reserved and receive normal wall modules from WallData. When true, flanking cells are reserved for ColumnMesh (cell left empty if ColumnMesh is null) |

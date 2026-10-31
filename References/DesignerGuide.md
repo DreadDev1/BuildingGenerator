@@ -801,6 +801,20 @@ all floor grid previews in one step. The DataAsset is not modified — press
   stacked at `TopMeshZ` (0 = top of the door mesh), uses the door's width and `DoorPlacementOffset`,
   and has its own `TopMeshAdjust` (rotate / flip / scale) like a wall-module slot. Example: Pack B uses
   `Panel_1x1x4m_C` with Roll 180 and Scale Y 0.5 (a 4W top trim squeezed to the 2W door).
+### Door Notes — Floor in the doorway (DoorBaseMesh / bFillFloorUnderDoor)
+
+Doors sit in the wall ring, and the room's floor fill never covers wall-ring cells. When a door is
+shallower than the wall band (Pack B's door wall is 35 cm deep in a 125 cm band), bare ground shows
+in front of it. Two ways to fill it, set on the DoorData:
+
+- **DoorBaseMesh** — a floor piece laid across the door's cells (DoorWidth x 1 cell) at floor height.
+  It is placed in *door space*: X points into the room and Y runs along the wall, so you set it up
+  once and it turns with the door on every wall. `DoorBaseRotation` rotates it around its pivot.
+  Example: Pack B uses `Panel_ME` (100 x 200), which fits a two-cell door as-is.
+- **bFillFloorUnderDoor** — used when DoorBaseMesh is empty: the door's cells get tiles from the
+  room's FloorData (any 1 x N tile that fits along the door; keep a 1x1 entry in FloorData).
+
+Leave both empty/unchecked and nothing is placed (the previous behaviour).
 ### Door Notes — bUseColumns
 
 By default, `UDoorData::bUseColumns` is **false**. This means the wall cells immediately

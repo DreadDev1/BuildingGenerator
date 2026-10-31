@@ -11,6 +11,9 @@
 #include "Components/TextRenderComponent.h"
 #endif
 
+// Defined further down; used by the floor pass for door thresholds.
+static int32 GetDoorWidthCells(const UDoorData* DoorData);
+
 AMasterRoom::AMasterRoom()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -310,9 +313,77 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 		}
 	}
 
+	// Door thresholds. Doors sit in the wall ring, which the fill above skips, so a door shallower than
+	// the wall band leaves bare ground in front of it. DoorBaseMesh (if set) is placed across the door's
+	// cells in door space (X = into the room, Y = along the wall); otherwise bFillFloorUnderDoor fills
+	// those cells with this FloorData's 1 x N tiles.
+	int32 ThresholdCount = 0;
+	for (const FDoorPlacement& Door : ActivePlacement.Doors)
+	{
+		const UDoorData* DData = GetEffectiveDoorData(Door);
+		if (!IsValid(DData)) continue;
+		if (!IsValid(DData->DoorBaseMesh) && !DData->bFillFloorUnderDoor) continue;
+
+		const int32 Width   = GetDoorWidthCells(DData);
+		const bool  bAlongY = (Door.Face == ERoomFace::South || Door.Face == ERoomFace::North);
+		const int32 Fixed   = (Door.Face == ERoomFace::South) ? 0
+		                    : (Door.Face == ERoomFace::North) ? RoomGridSize.X - 1
+		                    : (Door.Face == ERoomFace::West)  ? 0
+		                    :                                   RoomGridSize.Y - 1;
+		auto CellAt = [&](int32 i) { return bAlongY ? FIntPoint(Fixed, Door.CellOffset + i) : FIntPoint(Door.CellOffset + i, Fixed); };
+
+		if (IsValid(DData->DoorBaseMesh))
+		{
+			const FIntPoint C0 = CellAt(0);
+			const FTransform DoorSpace = MakeCellTransform(C0.X, C0.Y, bAlongY ? 1 : Width, bAlongY ? Width : 1,
+			                                               FBuildingMath::ToYawDegrees(Door.Face));
+			GetOrCreateFloorISMC(DData->DoorBaseMesh)->AddInstance(FTransform(DData->DoorBaseRotation) * DoorSpace);
+			++ThresholdCount;
+			continue;
+		}
+
+		// Fill from FloorData: weighted pick among 1 x N tiles that fit the rest of the door.
+		int32 i = 0;
+		while (i < Width)
+		{
+			const int32 Remaining = Width - i;
+			auto Fits = [&](const FFloorMeshEntry& E)
+			{
+				return IsValid(E.Mesh) && FMath::Min(E.CellsX, E.CellsY) == 1 && FMath::Max(E.CellsX, E.CellsY) <= Remaining;
+			};
+			TArray<const FFloorMeshEntry*> Candidates;
+			if (bUniform && UniformEntry && Fits(*UniformEntry)) Candidates.Add(UniformEntry);
+			else for (const FFloorMeshEntry& E : FloorData->FloorMeshes) { if (Fits(E)) Candidates.Add(&E); }
+			if (Candidates.IsEmpty())
+			{
+				DevLog->LogImportant(TEXT("PlaceFloorMeshes: no FloorData tile fits under a door — add a 1x1 entry"), EBGLogCategory::Mesh);
+				break;
+			}
+
+			float Total = 0.f;
+			for (const FFloorMeshEntry* E : Candidates) Total += (E->Weight > 0.f ? E->Weight : 1.f);
+			float Pick = Stream.FRand() * Total;
+			const FFloorMeshEntry* Entry = Candidates.Last();
+			for (const FFloorMeshEntry* E : Candidates)
+			{
+				Pick -= (E->Weight > 0.f ? E->Weight : 1.f);
+				if (Pick <= 0.f) { Entry = E; break; }
+			}
+
+			const int32 Len = FMath::Max(Entry->CellsX, Entry->CellsY);
+			const int32 AX  = bAlongY ? 1 : Len;
+			const int32 AY  = bAlongY ? Len : 1;
+			const float Yaw = (Entry->CellsX == AX && Entry->CellsY == AY) ? 0.f : 90.f;
+			const FIntPoint C = CellAt(i);
+			GetOrCreateFloorISMC(Entry->Mesh)->AddInstance(FTransform(Entry->MeshRotation) * MakeCellTransform(C.X, C.Y, AX, AY, Yaw));
+			++ThresholdCount;
+			i += Len;
+		}
+	}
 	DevLog->LogStatistic(TEXT("Floor instances placed"),    PlacedCount,   EBGLogCategory::Mesh);
 	DevLog->LogStatistic(TEXT("Fallback 1x1 cells"),        FallbackCount, EBGLogCategory::Mesh);
 	DevLog->LogStatistic(TEXT("Skipped unfillable cells"),  SkippedCount,  EBGLogCategory::Mesh);
+	DevLog->LogStatistic(TEXT("Door threshold pieces"),     ThresholdCount, EBGLogCategory::Mesh);
 }
 
 // ============================================================

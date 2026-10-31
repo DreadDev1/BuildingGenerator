@@ -50,6 +50,21 @@ public:
 	// Height at which TopMesh starts. 0 = the top of DoorMesh's bounding box.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Mesh", meta = (ClampMin = "0.0"))
 	float TopMeshZ = 0.f;
+
+	// Optional floor piece for the door's own cells. Doors sit in the wall ring, which the room's floor
+	// fill skips, so a door that is shallower than the wall band leaves bare ground in front of it.
+	// Placed like a floor tile, centred on the door's cells (DoorWidth x 1 cell) at floor height, in
+	// door space: X = into the room, Y = along the wall. DoorBaseRotation is applied around its pivot.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Floor")
+	TObjectPtr<UStaticMesh> DoorBaseMesh;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Floor")
+	FRotator DoorBaseRotation = FRotator::ZeroRotator;
+
+	// Used when DoorBaseMesh is empty: fill the door's cells with the room's FloorData tiles
+	// (1 x N tiles that fit along the door, e.g. a 1x1 or a 1x2 for a two-cell door).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Floor")
+	bool bFillFloorUnderDoor = false;
 	// Placed at the cell immediately to the left (CellOffset-1) and right (CellOffset+Width)
 	// of the door opening, replacing the wall module at those cells. Both sides use the same mesh.
 	// Leave null to place wall modules at the flanking cells instead.
