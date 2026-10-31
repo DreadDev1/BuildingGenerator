@@ -52,6 +52,7 @@ void AMasterRoom::GenerateRoomInterior()
 {
 	DevLog->LogSectionHeader(TEXT("GenerateRoomInterior"));
 
+	ResetGeneratedMeshes();
 	BuildGrid();
 	ClassifyCells();
 	PlaceFloorMeshes();
@@ -1026,6 +1027,8 @@ UInstancedStaticMeshComponent* AMasterRoom::GetOrCreateFloorISMC(UStaticMesh* Me
 	UInstancedStaticMeshComponent* NewISMC = NewObject<UInstancedStaticMeshComponent>(this);
 	NewISMC->SetStaticMesh(Mesh);
 	NewISMC->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	NewISMC->CreationMethod = EComponentCreationMethod::Instance;
+	AddInstanceComponent(NewISMC);
 	NewISMC->RegisterComponent();
 	FloorISMCPool.Add(NewISMC);
 	return NewISMC;
@@ -1044,6 +1047,8 @@ UInstancedStaticMeshComponent* AMasterRoom::GetOrCreateCeilingISMC(UStaticMesh* 
 	UInstancedStaticMeshComponent* NewISMC = NewObject<UInstancedStaticMeshComponent>(this);
 	NewISMC->SetStaticMesh(Mesh);
 	NewISMC->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	NewISMC->CreationMethod = EComponentCreationMethod::Instance;
+	AddInstanceComponent(NewISMC);
 	NewISMC->RegisterComponent();
 	CeilingISMCPool.Add(NewISMC);
 	return NewISMC;
@@ -1062,6 +1067,8 @@ UInstancedStaticMeshComponent* AMasterRoom::GetOrCreateWallISMC(UStaticMesh* Mes
 	UInstancedStaticMeshComponent* NewISMC = NewObject<UInstancedStaticMeshComponent>(this);
 	NewISMC->SetStaticMesh(Mesh);
 	NewISMC->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	NewISMC->CreationMethod = EComponentCreationMethod::Instance;
+	AddInstanceComponent(NewISMC);
 	NewISMC->RegisterComponent();
 	WallISMCPool.Add(NewISMC);
 	return NewISMC;
@@ -1080,6 +1087,27 @@ void AMasterRoom::SuppressExteriorWallISM(ERoomFace Face)
 // Mesh Fill Helpers
 // ============================================================
 
+void AMasterRoom::ResetGeneratedMeshes()
+{
+	// Generated ISMCs are created at runtime (Native / Instance creation method). Leave default
+	// subobjects (FlavorISMC) and anything a Blueprint adds through its construction script alone.
+	TArray<UInstancedStaticMeshComponent*> All;
+	GetComponents<UInstancedStaticMeshComponent>(All);
+	for (UInstancedStaticMeshComponent* ISMC : All)
+	{
+		if (!IsValid(ISMC)) continue;
+		ISMC->ClearInstances();
+		if (ISMC == FlavorISMC || ISMC->IsDefaultSubobject()) continue;
+		if (ISMC->CreationMethod == EComponentCreationMethod::SimpleConstructionScript ||
+			ISMC->CreationMethod == EComponentCreationMethod::UserConstructionScript) continue;
+
+		RemoveInstanceComponent(ISMC);
+		ISMC->DestroyComponent();
+	}
+	FloorISMCPool.Reset();
+	CeilingISMCPool.Reset();
+	WallISMCPool.Reset();
+}
 bool AMasterRoom::CanPlaceMesh(int32 X, int32 Y, int32 CellsX, int32 CellsY, const TArray<bool>& Claimed) const
 {
 	// Reject if footprint would exceed grid bounds
@@ -1189,39 +1217,15 @@ bool AMasterRoom::IsDoorCell(int32 X, int32 Y) const
 
 void AMasterRoom::PreviewRoom()
 {
-	for (UInstancedStaticMeshComponent* ISMC : FloorISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : CeilingISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : WallISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	FlavorISMC->ClearInstances();
 	if (Visualizer) Visualizer->ClearDebugDrawings();
 
+	// GenerateRoomInterior starts with ResetGeneratedMeshes, so every preview uses fresh components.
 	InitializeRoom(PreviewPlacement, PreviewSeed, PreviewRoomHeightCm);
 }
 
 void AMasterRoom::ClearPreview()
 {
-	for (UInstancedStaticMeshComponent* ISMC : FloorISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : CeilingISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	for (UInstancedStaticMeshComponent* ISMC : WallISMCPool)
-	{
-		if (IsValid(ISMC)) ISMC->ClearInstances();
-	}
-	FlavorISMC->ClearInstances();
+	ResetGeneratedMeshes();
 	if (Visualizer) Visualizer->ClearDebugDrawings();
 }
 

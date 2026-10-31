@@ -164,6 +164,11 @@ protected:
 private:
 	void GenerateRoomInterior();
 
+	// Destroys every generated ISMC (floor / ceiling / wall pools and any stray ones from earlier runs)
+	// and empties the pools, so each generation starts from fresh components. Re-using components with
+	// ClearInstances + AddInstance in the same frame can leave stale instances drawn in the editor.
+	void ResetGeneratedMeshes();
+
 	// ----------------------------------------------------------------
 	// Seed offsets — XOR with GenerationSeed per step so each step's
 	// FRandomStream is independent regardless of how many values the
