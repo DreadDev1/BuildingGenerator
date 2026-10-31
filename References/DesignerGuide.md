@@ -471,7 +471,7 @@ use a thin box mesh (e.g. 100 × 10 × 100 cm).
 > | Want | Set on the slot's Adjust |
 > |---|---|
 > | Stand a floor panel up as a wall panel | `Rotation` Pitch 90 |
-> | Use a base trim as the top trim (upside down) | `Scale` Z = -1 (mirror) or `Rotation` Roll 180 |
+> | Use a base trim as the top trim (upside down) | `Rotation` Roll 180 (preferred) or `Scale` Z = -1 |
 > | Make a small piece bigger / smaller | `Scale` |
 > | Nudge one slot only | `Offset` (X = into the room, Y = along the face, Z = up) |
 >
@@ -480,6 +480,11 @@ use a thin box mesh (e.g. 100 × 10 × 100 cm).
 > layer height; corner slots are centred on the corner cell. Stack heights use the rotated
 > size (a 25 cm floor tile stood upright stacks as 100 or 200 cm). The `StackHeight` overrides
 > still win. Slots left at their defaults are placed exactly as authored.
+>
+> **Prefer rotations over mirroring.** A negative Scale mirrors the mesh, and mirrored instanced
+> meshes can render inside out (holes where the piece should be). Use a Rotation wherever the
+> piece's shape allows it. Example: Pack B's corner top is `Panel_L` with Roll 180 + Yaw 90 instead
+> of Scale Z = -1 (the piece is symmetric across its diagonal, so the result is the same).
 
 4. Save the asset.
 
@@ -787,6 +792,15 @@ all floor grid previews in one step. The DataAsset is not modified — press
 
 ---
 
+### Door Notes — FrameMesh and TopMesh
+
+- **FrameMesh** is placed with exactly the same transform as DoorMesh. Author (or convert) the frame
+  in the door mesh's space and it lands seated in the opening. Example: Pack B uses `Panel_I_Door`
+  as DoorMesh and `Door_A_Base` as FrameMesh.
+- **TopMesh** fills the wall above the door so the wall reads as continuous over the opening. It is
+  stacked at `TopMeshZ` (0 = top of the door mesh), uses the door's width and `DoorPlacementOffset`,
+  and has its own `TopMeshAdjust` (rotate / flip / scale) like a wall-module slot. Example: Pack B uses
+  `Panel_1x1x4m_C` with Roll 180 and Scale Y 0.5 (a 4W top trim squeezed to the 2W door).
 ### Door Notes — bUseColumns
 
 By default, `UDoorData::bUseColumns` is **false**. This means the wall cells immediately

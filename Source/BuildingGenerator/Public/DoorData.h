@@ -4,6 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Sound/SoundBase.h"
+#include "WallData.h"
 #include "DoorData.generated.h"
 
 UENUM(BlueprintType)
@@ -32,9 +33,23 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Mesh")
 	TObjectPtr<UStaticMesh> DoorMesh;
 
+	// Optional. Placed with the same transform as DoorMesh (same width, DoorPlacementOffset), so a frame
+	// authored in the door mesh's space sits in its opening.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Mesh")
 	TObjectPtr<UStaticMesh> FrameMesh;
 
+	// Optional piece stacked above DoorMesh (e.g. the wall's top trim) so the wall reads as continuous
+	// over the opening. Uses the door's width and DoorPlacementOffset. TopMeshAdjust works like a wall
+	// module slot adjustment (rotate / mirror / scale, auto-aligned to the wall's back line).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Mesh")
+	TObjectPtr<UStaticMesh> TopMesh;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Mesh")
+	FWallMeshAdjust TopMeshAdjust;
+
+	// Height at which TopMesh starts. 0 = the top of DoorMesh's bounding box.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DoorData|Mesh", meta = (ClampMin = "0.0"))
+	float TopMeshZ = 0.f;
 	// Placed at the cell immediately to the left (CellOffset-1) and right (CellOffset+Width)
 	// of the door opening, replacing the wall module at those cells. Both sides use the same mesh.
 	// Leave null to place wall modules at the flanking cells instead.

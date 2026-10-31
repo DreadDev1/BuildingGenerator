@@ -727,7 +727,7 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 				continue;
 			}
 
-			// 2. Door span start — place DoorMesh spanning Width cells.
+			// 2. Door span start — place DoorMesh (and FrameMesh, if set) spanning Width cells.
 			if (const FDoorPlacement* DoorP = FindDoorAtStart(Face, Pos))
 			{
 				const UDoorData* DData = GetEffectiveDoorData(*DoorP);
@@ -736,6 +736,22 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 				{
 					GetOrCreateWallISMC(DData->DoorMesh)->AddInstance(
 						MakeWallTransform(Pos, Face, Width, 0.f, DData->DoorPlacementOffset));
+					// FrameMesh (optional) shares the door's transform, so a frame authored in the door mesh's
+					// space lands seated in its opening.
+					if (IsValid(DData->FrameMesh))
+					{
+						GetOrCreateWallISMC(DData->FrameMesh)->AddInstance(
+							MakeWallTransform(Pos, Face, Width, 0.f, DData->DoorPlacementOffset));
+					}
+					// TopMesh (optional) stacks above the door, using the wall-slot adjustment and alignment.
+					if (IsValid(DData->TopMesh))
+					{
+						const float TopZ = (DData->TopMeshZ > 0.f) ? DData->TopMeshZ : DData->DoorMesh->GetBoundingBox().Max.Z;
+						FBox TopBounds;
+						const FTransform TopLocal = MakeSlotTransform(DData->TopMesh, DData->TopMeshAdjust, EModuleAlign::Wall, TopBounds);
+						GetOrCreateWallISMC(DData->TopMesh)->AddInstance(
+							TopLocal * MakeWallTransform(Pos, Face, Width, TopZ, DData->DoorPlacementOffset));
+					}
 					++DoorsPlaced;
 				}
 				else

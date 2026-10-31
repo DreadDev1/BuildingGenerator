@@ -181,7 +181,10 @@ circular dependency.
 | Field | Type | Notes |
 |---|---|---|
 | DoorMesh | UStaticMesh* | placed spanning DoorWidth cells via MakeWallTransform |
-| FrameMesh | UStaticMesh* | optional |
+| FrameMesh | UStaticMesh* | optional — placed with the same transform as DoorMesh (author it in the door mesh's space so it sits in the opening) |
+| TopMesh | UStaticMesh* | optional — stacked above DoorMesh at TopMeshZ (0 = top of DoorMesh bounds), same width and DoorPlacementOffset; e.g. the wall's top trim |
+| TopMeshAdjust | FWallMeshAdjust | rotation / scale / offset for TopMesh, wall auto-align (back face X=0, centred Y, bottom Z=0) |
+| TopMeshZ | float | start height of TopMesh; 0 = DoorMesh bounds Max.Z |
 | ColumnMesh | UStaticMesh* | placed at CellOffset-1 and CellOffset+Width (flanking cells) when bUseColumns=true. Null + bUseColumns=true = flanking cells reserved but left empty |
 | DoorWidth | EDoorWidth | TwoCell (200cm) or FourCell (400cm). Controls door span and column positions |
 | bUseColumns | bool | Default false. When false, flanking cells are not reserved and receive normal wall modules from WallData. When true, flanking cells are reserved for ColumnMesh (cell left empty if ColumnMesh is null) |

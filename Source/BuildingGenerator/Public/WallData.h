@@ -19,6 +19,7 @@ struct BUILDINGGENERATOR_API FWallMeshAdjust
 	FRotator Rotation = FRotator::ZeroRotator;
 
 	// Scale applied in the mesh's own space. A negative axis mirrors the mesh (Z = -1 turns it upside down).
+	// Prefer a Rotation for flips where the mesh allows it: mirrored instances can render inside out.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MeshAdjust")
 	FVector Scale = FVector::OneVector;
 
