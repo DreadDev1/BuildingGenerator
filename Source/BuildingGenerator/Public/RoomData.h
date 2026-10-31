@@ -16,17 +16,32 @@ enum class ERoomGenerationType : uint8
 	BSP			UMETA(DisplayName = "BSP")
 };
 
+// A designer-chosen floor mesh pinned to a grid cell. Forced placements are placed before the random
+// floor fill, which then fills the remaining floor cells around them.
+// CellPosition is the footprint's origin cell: the lowest (X,Y) it covers, as shown by the
+// Visualizer's coordinate labels. CellsX x CellsY is the footprint as it sits in the room.
 USTRUCT(BlueprintType)
 struct BUILDINGGENERATOR_API FForcedPlacement
 {
 	GENERATED_BODY()
 
+	// Origin cell of the footprint (lowest X,Y covered). Must be a floor cell, not the wall ring.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement")
 	FIntPoint CellPosition = FIntPoint::ZeroValue;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement")
 	TObjectPtr<UStaticMesh> Mesh = nullptr;
 
+	// Footprint size in cells along the room's X axis.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement", meta = (ClampMin = "1"))
+	int32 CellsX = 1;
+
+	// Footprint size in cells along the room's Y axis.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement", meta = (ClampMin = "1"))
+	int32 CellsY = 1;
+
+	// Turns the mesh around the footprint centre (use 0 / 90 / 180 / 270). CellsX / CellsY stay the
+	// footprint in the room, so a 2x4 mesh turned 90 degrees is entered as CellsX 4, CellsY 2.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RoomData|ForcedPlacement")
 	float RotationYaw = 0.f;
 };
@@ -64,6 +79,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "RoomData|Flavor")
 	float FlavorDensity = 0.25f;
 
+	// Applied to every room that uses this RoomData. For one room only, use FRoomPlacement::ForcedPlacements.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "RoomData|ForcedPlacement")
 	TArray<FForcedPlacement> ForcedPlacements;
 };

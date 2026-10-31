@@ -123,7 +123,8 @@ protected:
 	void PlaceWallMeshStacks();
 	virtual void PlaceWallMeshStacks_Implementation();
 
-	// Step 6 — apply URoomData::ForcedPlacements overrides
+	// Step 6 — reserved for forced wall-module overrides. Forced floor meshes are placed in Step 3,
+	// before the random fill (see PlaceForcedFloorMeshes).
 	UFUNCTION(BlueprintNativeEvent, Category = "MasterRoom|Generation")
 	void ApplyForcedPlacements();
 	virtual void ApplyForcedPlacements_Implementation();
@@ -181,6 +182,14 @@ private:
 	// Returns true if a mesh footprint (CellsX × CellsY) fits at (X, Y):
 	// every covered cell must be ECellType::Floor and unclaimed.
 	bool CanPlaceMesh(int32 X, int32 Y, int32 CellsX, int32 CellsY, const TArray<bool>& Claimed) const;
+
+	// Places ActivePlacement.ForcedPlacements, then RoomData->ForcedPlacements, into floor cells and
+	// claims them so the random fill works around them. Entries that are out of range, off the floor
+	// cells, or overlap an earlier forced placement are skipped with a DevLog warning.
+	void PlaceForcedFloorMeshes(TArray<bool>& Claimed);
+
+	// Per-room entries first, then RoomData entries.
+	void GatherForcedPlacements(TArray<const struct FForcedPlacement*>& Out) const;
 
 	// Marks all cells in the (CellsX × CellsY) footprint at (X, Y) as claimed.
 	void ClaimCells(int32 X, int32 Y, int32 CellsX, int32 CellsY, TArray<bool>& Claimed);

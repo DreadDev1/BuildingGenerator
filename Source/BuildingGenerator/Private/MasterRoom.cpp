@@ -200,6 +200,9 @@ void AMasterRoom::PlaceFloorMeshes_Implementation()
 	TArray<bool> Claimed;
 	Claimed.Init(false, CellGrid.Num());
 
+	// Designer-forced meshes go first; the fill below skips their cells.
+	PlaceForcedFloorMeshes(Claimed);
+
 	int32 PlacedCount   = 0;
 	int32 FallbackCount = 0;
 	int32 SkippedCount  = 0;
@@ -579,7 +582,54 @@ void AMasterRoom::PlaceCeilingMeshes_Implementation()
 	DevLog->LogStatistic(TEXT("Fallback 1x1 cells"),        FallbackCount, EBGLogCategory::Mesh);
 	DevLog->LogStatistic(TEXT("Skipped unfillable cells"),  SkippedCount,  EBGLogCategory::Mesh);
 }
-void AMasterRoom::ApplyForcedPlacements_Implementation(){}
+void AMasterRoom::ApplyForcedPlacements_Implementation(){}  // floors: see PlaceForcedFloorMeshes (Step 3)
+
+void AMasterRoom::GatherForcedPlacements(TArray<const FForcedPlacement*>& Out) const
+{
+	Out.Reset();
+	for (const FForcedPlacement& FP : ActivePlacement.ForcedPlacements) Out.Add(&FP);
+	if (IsValid(ActivePlacement.RoomDataAsset))
+	{
+		for (const FForcedPlacement& FP : ActivePlacement.RoomDataAsset->ForcedPlacements) Out.Add(&FP);
+	}
+}
+
+void AMasterRoom::PlaceForcedFloorMeshes(TArray<bool>& Claimed)
+{
+	TArray<const FForcedPlacement*> List;
+	GatherForcedPlacements(List);
+
+	int32 Placed = 0;
+	for (int32 i = 0; i < List.Num(); ++i)
+	{
+		const FForcedPlacement& FP = *List[i];
+		const int32 CX = FMath::Max(1, FP.CellsX);
+		const int32 CY = FMath::Max(1, FP.CellsY);
+		const FIntPoint C = FP.CellPosition;
+
+		if (!IsValid(FP.Mesh))
+		{
+			DevLog->LogImportant(FString::Printf(TEXT("ForcedPlacement %d at (%d,%d): no mesh set — skipped"), i, C.X, C.Y), EBGLogCategory::Mesh);
+			continue;
+		}
+		if (C.X < 0 || C.Y < 0 || !CanPlaceMesh(C.X, C.Y, CX, CY, Claimed))
+		{
+			DevLog->LogImportant(FString::Printf(
+				TEXT("ForcedPlacement %d (%s) at (%d,%d) size %dx%d does not fit: it must lie on free floor cells inside the wall ring (floor cells are 1..%d, 1..%d) — skipped"),
+				i, *GetNameSafe(FP.Mesh), C.X, C.Y, CX, CY, RoomGridSize.X - 2, RoomGridSize.Y - 2), EBGLogCategory::Mesh);
+			continue;
+		}
+
+		GetOrCreateFloorISMC(FP.Mesh)->AddInstance(MakeCellTransform(C.X, C.Y, CX, CY, FP.RotationYaw));
+		ClaimCells(C.X, C.Y, CX, CY, Claimed);
+		++Placed;
+	}
+
+	if (List.Num() > 0)
+	{
+		DevLog->LogStatistic(TEXT("Forced floor placements"), Placed, EBGLogCategory::Mesh);
+	}
+}
 void AMasterRoom::PlaceFlavorMeshes_Implementation()    {}
 void AMasterRoom::SpawnDoorTriggers_Implementation()    {}
 
@@ -1224,12 +1274,20 @@ void AMasterRoom::BuildDoorCells(TArray<FIntPoint>& OutCells) const
 void AMasterRoom::BuildCustomCells(TArray<FIntPoint>& OutCells) const
 {
 	OutCells.Reset();
-	const URoomData* RoomData = ActivePlacement.RoomDataAsset;
-	if (!IsValid(RoomData)) return;
+	TArray<const FForcedPlacement*> List;
+	GatherForcedPlacements(List);
 
-	for (const FForcedPlacement& FP : RoomData->ForcedPlacements)
+	// Every cell of each footprint, so the whole forced area shows yellow.
+	for (const FForcedPlacement* FP : List)
 	{
-		OutCells.Add(FP.CellPosition);
+		for (int32 DY = 0; DY < FMath::Max(1, FP->CellsY); ++DY)
+		{
+			for (int32 DX = 0; DX < FMath::Max(1, FP->CellsX); ++DX)
+			{
+				const FIntPoint C(FP->CellPosition.X + DX, FP->CellPosition.Y + DY);
+				if (C.X >= 0 && C.Y >= 0 && C.X < RoomGridSize.X && C.Y < RoomGridSize.Y) OutCells.AddUnique(C);
+			}
+		}
 	}
 }
 
