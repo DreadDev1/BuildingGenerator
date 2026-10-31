@@ -17,20 +17,25 @@ struct BUILDINGGENERATOR_API FWallModule
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Footprint")
 	int32 CellsWide = 1;
 
-	// Required — generation skips any module with a null BaseMesh or TopMesh.
+	// Single-piece module (e.g. a full-height pillar used as a wall): only BaseMesh is placed.
+	// TopMesh and the middle meshes are not required and are ignored.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes")
+	bool bUseBaseMeshOnly = false;
+
+	// Required — generation skips any module with a null BaseMesh, or a null TopMesh unless bUseBaseMeshOnly is set.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes")
 	TObjectPtr<UStaticMesh> BaseMesh;
 
 	// Optional. Leave null for a 2-piece stack (Base + Top only).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes", meta = (EditCondition = "!bUseBaseMeshOnly"))
 	TObjectPtr<UStaticMesh> MiddleMesh1;
 
 	// Optional. Only used when MiddleMesh1 is also set.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes", meta = (EditCondition = "!bUseBaseMeshOnly"))
 	TObjectPtr<UStaticMesh> MiddleMesh2;
 
-	// Required — see BaseMesh note above.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes")
+	// Required unless bUseBaseMeshOnly is set — see BaseMesh note above.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Meshes", meta = (EditCondition = "!bUseBaseMeshOnly"))
 	TObjectPtr<UStaticMesh> TopMesh;
 
 	// Applied in wall-forward space (X = depth into room, Y = along face, Z = up).
@@ -45,10 +50,10 @@ struct BUILDINGGENERATOR_API FWallModule
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Heights", meta = (ClampMin = "0.0"))
 	float BaseMeshStackHeight = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Heights", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Heights", meta = (ClampMin = "0.0", EditCondition = "!bUseBaseMeshOnly"))
 	float MiddleMesh1StackHeight = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Heights", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Heights", meta = (ClampMin = "0.0", EditCondition = "!bUseBaseMeshOnly"))
 	float MiddleMesh2StackHeight = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallModule|Placement", meta = (ClampMin = "0.0"))

@@ -537,6 +537,12 @@ static int32 GetDoorWidthCells(const UDoorData* DoorData)
 	return (DoorData->DoorWidth == EDoorWidth::FourCell) ? 4 : 2;
 }
 
+// A module needs a BaseMesh, plus a TopMesh unless it is a single-piece (bUseBaseMeshOnly) module.
+static bool IsWallModuleUsable(const FWallModule& Mod)
+{
+	return IsValid(Mod.BaseMesh) && (Mod.bUseBaseMeshOnly || IsValid(Mod.TopMesh));
+}
+
 // Weighted random module selection. Returns the first valid module if no candidate fits.
 static const FWallModule* PickWallModule(const UWallData* WallData, int32 Available, FRandomStream& Stream)
 {
@@ -545,7 +551,7 @@ static const FWallModule* PickWallModule(const UWallData* WallData, int32 Availa
 
 	for (const FWallModule& Mod : WallData->WallModules)
 	{
-		if (!IsValid(Mod.BaseMesh) || !IsValid(Mod.TopMesh)) continue;
+		if (!IsWallModuleUsable(Mod)) continue;
 		if (!Fallback) Fallback = &Mod;
 		if (Mod.CellsWide > Available) continue;
 		TotalWeight += Mod.Weight;
@@ -556,7 +562,7 @@ static const FWallModule* PickWallModule(const UWallData* WallData, int32 Availa
 	float Pick = Stream.FRand() * TotalWeight;
 	for (const FWallModule& Mod : WallData->WallModules)
 	{
-		if (!IsValid(Mod.BaseMesh) || !IsValid(Mod.TopMesh)) continue;
+		if (!IsWallModuleUsable(Mod)) continue;
 		if (Mod.CellsWide > Available) continue;
 		Pick -= Mod.Weight;
 		if (Pick <= 0.f) return &Mod;
@@ -723,8 +729,8 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 			};
 
 			const float BaseH = StackH(Mod->BaseMesh,    Mod->BaseMeshStackHeight);
-			const float M1H   = StackH(Mod->MiddleMesh1, Mod->MiddleMesh1StackHeight);
-			const float M2H   = StackH(Mod->MiddleMesh2, Mod->MiddleMesh2StackHeight);
+			const float M1H   = Mod->bUseBaseMeshOnly ? 0.f : StackH(Mod->MiddleMesh1, Mod->MiddleMesh1StackHeight);
+			const float M2H   = Mod->bUseBaseMeshOnly ? 0.f : StackH(Mod->MiddleMesh2, Mod->MiddleMesh2StackHeight);
 
 			auto PlaceLayer = [&](UStaticMesh* Mesh, float Z)
 			{
@@ -734,9 +740,12 @@ void AMasterRoom::PlaceWallMeshStacks_Implementation()
 			};
 
 			PlaceLayer(Mod->BaseMesh,    0.f);
-			PlaceLayer(Mod->MiddleMesh1, BaseH);
-			PlaceLayer(Mod->MiddleMesh2, BaseH + M1H);
-			PlaceLayer(Mod->TopMesh,     BaseH + M1H + M2H);
+			if (!Mod->bUseBaseMeshOnly)
+			{
+				PlaceLayer(Mod->MiddleMesh1, BaseH);
+				PlaceLayer(Mod->MiddleMesh2, BaseH + M1H);
+				PlaceLayer(Mod->TopMesh,     BaseH + M1H + M2H);
+			}
 
 			Pos += Mod->CellsWide;
 			++StacksPlaced;

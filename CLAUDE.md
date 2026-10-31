@@ -164,10 +164,10 @@ circular dependency.
 | Field | Type | Notes |
 |---|---|---|
 | CellsWide | int32 | face-width in 100cm cells (1, 2, or 4) |
-| BaseMesh | UStaticMesh* | required |
+| bUseBaseMeshOnly | bool | single-piece module: only BaseMesh is placed; Top/Middle ignored and not required |
 | MiddleMesh1 | UStaticMesh* | optional — null = 2-piece stack |
 | MiddleMesh2 | UStaticMesh* | optional — only if MiddleMesh1 set |
-| TopMesh | UStaticMesh* | required |
+| TopMesh | UStaticMesh* | required unless bUseBaseMeshOnly |
 | PlacementOffset | FVector | wall-forward space (X=into-room, Y=along-face, Z=up). Corrects for mesh depth ≠ 100cm. Example: mesh 135cm deep → X = -35 |
 | BaseMeshStackHeight | float | overrides bounding box height for stacking when > 0. Use when BB ≠ visual top of mesh |
 | MiddleMesh1StackHeight | float | same, for MiddleMesh1 |
@@ -534,7 +534,7 @@ if (Target.bBuildEditor)
   that room's exterior door position and cuts an opening in the exterior skin ISMC there.
   No separate exterior door mesh is placed.
 
-- **Wall module required fields**: BaseMesh and TopMesh are required on every FWallModule.
+- **Wall module required fields**: BaseMesh and TopMesh are required on every FWallModule (TopMesh is not required when bUseBaseMeshOnly is set).
   Generation skips any module missing either. MiddleMesh1 and MiddleMesh2 are optional —
   MiddleMesh1 alone adds one middle layer; both add two. This gives designers direct control
   over room height without code changes. **CONFIRMED during Step 4 testing.**

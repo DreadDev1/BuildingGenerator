@@ -61,7 +61,7 @@ the same building.
 | Step 2 | Room grid allocation and cell classification | Available — debug visualization works |
 | Step 3 | Weighted random floor mesh fill | Available — Random or Uniform fill mode; multi-mesh pool; AllowRotation |
 | Step 3b | Weighted random ceiling mesh fill | Available — same modes as floor; configure via UCeilingData |
-| Step 4 | Wall mesh stacks + corner pieces + door mesh placement | Available — WallData with BaseMesh/TopMesh required; CornerMesh optional; bUseColumns controls flanking cell reservation |
+| Step 4 | Wall mesh stacks + corner pieces + door mesh placement | Available — WallData with BaseMesh/TopMesh required (TopMesh not needed when bUseBaseMeshOnly is set); CornerMesh optional; bUseColumns controls flanking cell reservation |
 | Step 5 | AFloorManager Details panel and room layout | Available — place AFloorManager, fill RoomPlacements, use ClearLayout |
 | Step 6 | PreviewLayout debug visualization in AFloorManager | Available — draws floor grid, room footprints; 5 validation checks |
 | Step 7 | ABuildingManager DataAsset-driven spawning | Available — create `UBuildingData`, assign to `ABuildingManager`; three buttons: GenerateBuilding (grid preview), SpawnBuilding (full geometry), ClearBuilding |
@@ -378,6 +378,8 @@ Change `PreviewSeed` to verify different configurations.
 `AMasterRoom` places a wall module stack on every Wall cell. Each module consists of
 up to four pieces — **Base → Middle1 → Middle2 → Top** — stacked vertically. BaseMesh
 and TopMesh are required; the two Middle pieces are optional and control room height.
+For a single-piece module (a full-height pillar such as Pack C `Wall_E`), tick
+`bUseBaseMeshOnly`: only BaseMesh is placed and TopMesh/Middle pieces are ignored.
 
 The generator bin-packs modules from your `UWallData` asset along each wall face,
 selecting by weight and fitting by `CellsWide`. One `UInstancedStaticMeshComponent`
@@ -422,10 +424,11 @@ use a thin box mesh (e.g. 100 × 10 × 100 cm).
 | Field | Value | Notes |
 |---|---|---|
 | `CellsWide` | `1` | This module covers 1 cell (100 cm) along the wall face |
+| `bUseBaseMeshOnly` | `false` | Tick for a single-piece module (full-height pillar). Only BaseMesh is placed; Middle/Top fields are greyed out |
 | `BaseMesh` | Your base wall mesh | Required — generation skips modules without this |
 | `MiddleMesh1` | Your middle wall mesh | Optional — leave empty for a Base + Top only stack |
 | `MiddleMesh2` | Leave empty | Optional — add for a taller wall; requires MiddleMesh1 |
-| `TopMesh` | Your top wall mesh | Required — generation skips modules without this |
+| `TopMesh` | Your top wall mesh | Required unless `bUseBaseMeshOnly` is ticked — generation skips modules without this |
 | `PlacementOffset` | `(0, 0, 0)` initially | See depth correction note below |
 | `BaseMeshStackHeight` | `0` initially | See gap correction note below |
 | `MiddleMesh1StackHeight` | `0` | Same — only set if Middle1 shows a gap above it |
